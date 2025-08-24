@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ff8fb1" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>计数伴侣</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Full-window app shell -->
+      <div id="panel" class="panel">
+        <div class="panel-inner">
+          <div id="panel-header" class="panel-header">
+            <div class="title">计数伴侣 ★</div>
+            <div class="header-actions">
+              <button id="btn-clear" class="danger" title="清空所有数据">清空</button>
+              <button id="btn-global-menu" class="btn-ellipsis ghost round btn-icon" title="更多">
+                <span class="dots"><i></i><i></i><i></i></span>
+              </button>
+              <input id="file-import" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+
+          <!-- Decorative ornaments (subtle, can be removed easily) -->
+          <div class="ornaments" aria-hidden="true">
+            <!-- Top-left accent sketch -->
+            <svg class="orn tl" width="240" height="160" viewBox="0 0 240 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.6">
+                <rect x="-20" y="-10" width="160" height="80" rx="18" transform="rotate(-12 0 0)" style="fill: var(--accent); opacity: .06"/>
+                <circle cx="56" cy="28" r="20" style="stroke: var(--accent); stroke-width: 2; opacity: .35; fill: none;"/>
+                <circle cx="112" cy="44" r="10" style="fill: var(--accent-2); opacity: .18;"/>
+                <circle cx="132" cy="24" r="4" style="fill: var(--accent); opacity: .45;"/>
+                <circle cx="86" cy="64" r="3" style="fill: var(--accent); opacity: .35;"/>
+              </g>
+            </svg>
+            <!-- Bottom-right dashed ring -->
+            <svg class="orn br" width="260" height="200" viewBox="0 0 260 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.7">
+                <circle cx="200" cy="150" r="46" style="stroke: var(--accent-2); stroke-width: 2; stroke-dasharray: 6 8; opacity: .45; fill: none;"/>
+                <circle cx="200" cy="150" r="24" style="stroke: var(--accent); stroke-width: 2; opacity: .25; fill: none;"/>
+                <rect x="150" y="110" width="40" height="16" rx="8" style="fill: var(--accent); opacity: .10;"/>
+                <circle cx="224" cy="120" r="5" style="fill: var(--accent); opacity: .35;"/>
+              </g>
+            </svg>
+            <!-- New subtle accents: top-right sparkles -->
+            <svg class="orn tr" width="200" height="160" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.55">
+                <circle cx="162" cy="22" r="3" style="fill: var(--accent); opacity:.5"/>
+                <circle cx="146" cy="44" r="6" style="fill: var(--accent-2); opacity:.2"/>
+                <circle cx="180" cy="54" r="2" style="fill: var(--accent); opacity:.45"/>
+                <rect x="120" y="18" width="32" height="12" rx="6" style="fill: var(--accent); opacity:.08"/>
+              </g>
+            </svg>
+            <!-- New subtle accents: bottom-left arc -->
+            <svg class="orn bl" width="220" height="180" viewBox="0 0 220 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.5">
+                <path d="M20 160 C 60 120, 100 140, 160 110" stroke="currentColor" style="color: var(--accent-2); stroke-width:2; stroke-dasharray:5 7; opacity:.5" fill="none"/>
+                <circle cx="48" cy="148" r="4" style="fill: var(--accent); opacity:.35"/>
+                <circle cx="92" cy="136" r="3" style="fill: var(--accent); opacity:.3"/>
+              </g>
+            </svg>
+            <!-- Top-middle gentle waves -->
+            <svg class="orn tm" width="260" height="60" viewBox="0 0 260 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.35">
+                <path d="M0 40 C 40 20, 80 60, 120 36 C 160 14, 200 58, 240 34" stroke="currentColor" style="color: var(--accent); stroke-width: 2; opacity:.35"/>
+                <path d="M8 48 C 48 28, 88 54, 128 32 C 168 10, 208 56, 252 30" stroke="currentColor" style="color: var(--accent-2); stroke-width: 2; opacity:.2"/>
+              </g>
+            </svg>
+            <!-- Middle-left dotted block -->
+            <svg class="orn ml" width="140" height="140" viewBox="0 0 140 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g opacity="0.45">
+                <rect x="10" y="10" width="96" height="56" rx="12" style="fill: var(--accent); opacity:.06"/>
+                <g style="opacity:.35; fill: var(--accent);">
+                  <circle cx="26" cy="26" r="2"/>
+                  <circle cx="46" cy="26" r="2"/>
+                  <circle cx="66" cy="26" r="2"/>
+                  <circle cx="86" cy="26" r="2"/>
+                  <circle cx="26" cy="46" r="2"/>
+                  <circle cx="46" cy="46" r="2"/>
+                  <circle cx="66" cy="46" r="2"/>
+                  <circle cx="86" cy="46" r="2"/>
+                </g>
+              </g>
+            </svg>
+          </div>
+
+          <div class="panel-toolbar">
+            <button id="btn-add" class="tonal">+ 新建计数器</button>
+            <label class="opacity-label">透明度
+              <input id="opacity" type="range" min="70" max="100" value="100" />
+            </label>
+            <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+              <button id="theme-toggle" class="tonal" title="切换主题">主题</button>
+            </div>
+          </div>
+
+          <div id="counters" class="counters"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History modal -->
+    <dialog id="history-dialog" class="modal">
+      <div class="modal-header">
+        <div class="modal-title">历史记录</div>
+        <button id="history-close">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div id="history-meta" class="history-meta"></div>
+        <ul id="history-list" class="history-list"></ul>
+      </div>
+    </dialog>
+
+    <!-- Rename modal -->
+    <dialog id="rename-dialog" class="modal">
+      <div class="modal-header">
+        <div class="modal-title">重命名计数器</div>
+        <button id="rename-close">关闭</button>
+      </div>
+      <div class="modal-body">
+        <input id="rename-input" type="text" placeholder="新的名称" />
+        <div class="modal-actions">
+          <button id="rename-ok">确定</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Confirm modal (app-style, replaces browser confirm) -->
+    <dialog id="confirm-dialog" class="modal confirm">
+      <div class="modal-header">
+        <div id="confirm-title" class="modal-title">请确认</div>
+      </div>
+      <div class="modal-body">
+        <div id="confirm-text" class="confirm-text"></div>
+        <div class="modal-actions">
+          <button id="confirm-cancel">取消</button>
+          <button id="confirm-ok" class="danger">确定</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script src="app.js"></script>
+    <script>
+      // Register Service Worker. On localhost, still enable SW when running as an installed PWA
+      // so the app can work offline without the local Python server.
+      (function() {
+        if (!('serviceWorker' in navigator)) return;
+        const isLocalhost = /^(localhost|127\.0\.0\.1)$/i.test(location.hostname);
+        const isStandalone = (window.matchMedia && (
+          window.matchMedia('(display-mode: standalone)').matches ||
+          window.matchMedia('(display-mode: window-controls-overlay)').matches
+        )) || (navigator.standalone === true);
+
+        // In normal browser tabs on localhost, avoid SW to keep dev simple
+        if (isLocalhost && !isStandalone) {
+          navigator.serviceWorker.getRegistrations().then((regs) => {
+            if (regs && regs.length) {
+              Promise.all(regs.map(r => r.unregister())).then(() => {
+                if (navigator.serviceWorker.controller) {
+                  location.reload();
+                }
+              });
+            }
+          });
+          return;
+        }
+
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return; refreshing = true;
+          location.reload();
+        });
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+            .then((reg) => { try { if (reg && typeof reg.update === 'function') reg.update(); } catch(e){} })
+            .catch((e) => console.debug('SW register failed', e));
+        });
+      })();
+    </script>
+  </body>
+  </html>
