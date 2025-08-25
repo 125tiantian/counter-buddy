@@ -1,5 +1,5 @@
 /* Simple offline cache for Counter Buddy Web */
-const CACHE_VERSION = 'v1.0.20';
+const CACHE_VERSION = 'v1.0.21';
 const CACHE_NAME = `counter-buddy-web-${CACHE_VERSION}`;
 const ASSETS = [
   './',

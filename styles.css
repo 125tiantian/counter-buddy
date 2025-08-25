@@ -342,7 +342,16 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .modal-header::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent)); opacity:.5; }
 .modal-body { padding: 10px 12px 16px 12px; }
 .modal-title { font-weight: 600; }
-.modal-actions { display:flex; justify-content: flex-end; margin-top: 10px; }
+.modal-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  margin-top: 10px;
+  flex-wrap: nowrap !important;
+  gap: 8px;
+}
+.modal-actions > * { flex: 0 0 auto; white-space: nowrap; }
 
 #rename-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
 
@@ -424,8 +433,9 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 }
 
 /* Quick note content inside popover */
-.note-quick { display: flex; gap: 6px; align-items: center; padding: 10px 12px; min-width: 260px; }
-.note-quick .note-input { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
+.note-quick { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 6px; align-items: center; padding: 10px 12px; min-width: 260px; }
+.note-quick .note-input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
+.note-quick > button { flex: 0 0 auto; white-space: nowrap; }
 .note-quick button { padding: 6px 10px; }
 
 /* Icon-like compact buttons */
@@ -486,7 +496,8 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 .actions .btn-plus.tap-flash::after { opacity: 1; }
 
 .history-note { margin-left: 8px; font-size: 12px; color: var(--muted); }
-.note-edit { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; min-width: 0; }
+.note-edit { display: flex !important; flex-direction: row !important; gap: 6px; align-items: center; flex-wrap: nowrap !important; min-width: 0; }
+.note-edit > button { flex: 0 0 auto; white-space: nowrap; }
 .note-edit input { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
 .note-edit input { min-width: 0; }
 .note-edit button { padding: 6px 10px; flex: 0 0 auto; white-space: nowrap; }
@@ -504,7 +515,24 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 .counters { scrollbar-color: color-mix(in oklab, var(--accent) 30%, var(--btn)) transparent; scrollbar-width: thin; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  /* Keep button/tap feedback and menu state visuals.
+     Only reduce large or continuous animations to avoid motion sickness. */
+  /* Disable heavy animations */
+  .card.enter,
+  .badge.flip,
+  .name .char.show,
+  .popover:not(.hidden) .item,
+  .popover.hiding {
+    animation: none !important;
+  }
+  /* Short-circuit big transitions (dialogs, popovers, leaving cards) */
+  .modal,
+  .modal::backdrop,
+  .popover,
+  .card.leaving {
+    transition: none !important;
+  }
+  /* Allow essential micro-interactions (buttons, menu dots) to remain. */
 }
 
 /* Dragging styles & drop indicators */
@@ -541,3 +569,30 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 .ornaments .bl { bottom: 8px; left: 8px; }
 /* Smooth transition when keyboard avoidance shifts elements */
 .kb-avoid { transition: transform .22s ease, top .22s ease; }
+
+/* App footer credit */
+.app-footer {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: .2px;
+  opacity: .85;
+  user-select: none;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.app-footer .sep { opacity: .6; }
+.app-footer a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted transparent; }
+@media (hover: hover) {
+  .app-footer a:hover { color: var(--text); border-bottom-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+}
+@media (max-width: 420px) {
+  .app-footer { gap: 6px; }
+  .app-footer .local-note { display: none; }
+}

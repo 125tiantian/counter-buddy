@@ -163,6 +163,7 @@ function showPopoverForCounter(counter, anchorRect) {
 // Quick note popover (app-style) for +1
 let notePopoverEl = null;
 let noteCommit = null;
+let noteFocusTimer = null; // delayed focus timer for quick-note input
 let noteSuppressCloseUntil = 0; // ignore document clicks for a short period after opening
 let noteIgnoreNextClick = 0;    // additionally ignore exactly the next click after opening (robust for long-press)
 let menuOpenTimer = null; // single hover-open timer for popovers
@@ -188,6 +189,7 @@ function hideNotePopover() {
   p.classList.add('hiding');
   setTimeout(() => { p.classList.add('hidden'); p.classList.remove('hiding'); }, 160);
   noteCommit = null;
+  if (noteFocusTimer) { try { clearTimeout(noteFocusTimer); } catch {} noteFocusTimer = null; }
 }
 
 function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
@@ -202,6 +204,14 @@ function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
   input.type = 'text';
   input.placeholder = placeholder;
   input.className = 'note-input';
+  // Reduce autofill interference and keep neutral typing experience
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('autocapitalize', 'off');
+  input.setAttribute('autocorrect', 'off');
+  input.setAttribute('spellcheck', 'false');
+  input.setAttribute('inputmode', 'text');
+  input.setAttribute('enterkeyhint', 'done');
+  input.setAttribute('name', 'quick-note');
   const ok = document.createElement('button'); ok.textContent = '保存'; ok.className = 'primary';
   const cancel = document.createElement('button'); cancel.textContent = '取消';
   wrap.append(input, ok, cancel);
@@ -221,10 +231,20 @@ function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
   noteCommit = onCommit;
   try {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    noteSuppressCloseUntil = now + 600; // give a wider window to cover finger-up after long-press
-  } catch { noteSuppressCloseUntil = Date.now() + 600; }
-  noteIgnoreNextClick = 1; // swallow the very next document click after opening
-  input.focus(); try { input.select(); } catch {}
+    // 适当延长抬手后的保护窗口，避免因系统合成 click 导致立即关闭或失焦
+    noteSuppressCloseUntil = now + 900;
+  } catch { noteSuppressCloseUntil = Date.now() + 900; }
+  noteIgnoreNextClick = 1; // 吞掉弹出后的第一个全局 click
+  // 统一延时 250ms 再聚焦，规避长按抬手与系统合成 click 造成的闪退
+  if (noteFocusTimer) { try { clearTimeout(noteFocusTimer); } catch {} }
+  noteFocusTimer = setTimeout(() => {
+    try {
+      // 仅当浮层仍然可见时再聚焦
+      const hidden = p.classList.contains('hidden');
+      if (!hidden) { input.focus(); input.select && input.select(); }
+    } catch {}
+    noteFocusTimer = null;
+  }, 250);
   const finish = (commit) => {
     if (commit && noteCommit) { const v = input.value.trim(); try { noteCommit(v); } catch {} }
     hideNotePopover();
@@ -460,6 +480,9 @@ function render() {
         } else {
           inc(c.id, +1);
         }
+      } else {
+        // 若是长按触发的备注，阻断后续的合成 click，避免打断输入聚焦
+        try { e.preventDefault(); } catch {}
       }
       try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {}
     });
@@ -471,6 +494,8 @@ function render() {
       try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {}
     });
     plus.addEventListener('pointerleave', clearHold);
+    // 屏蔽长按产生的系统上下文菜单，避免干扰备注输入
+    plus.addEventListener('contextmenu', (e) => { try { e.preventDefault(); } catch {} });
     // minus disabled at 0
     minus.disabled = c.count <= 0;
 
@@ -721,6 +746,34 @@ function openHistory(id) {
   const dialog = el('#history-dialog');
   const list = el('#history-list');
   const meta = el('#history-meta');
+  // Helper: ensure only one inline editor open at a time
+  const cancelAnyEditing = (exceptLi) => {
+    try {
+      const editing = Array.from(list.querySelectorAll('li.editing'));
+      for (const li of editing) {
+        if (exceptLi && li === exceptLi) continue;
+        const cancelBtn = li.querySelector('.note-edit button:not(.primary)');
+        if (cancelBtn) { cancelBtn.click(); continue; }
+        // Fallback: rebuild to default view using data-index
+        const idx = Number(li.dataset.idx || -1);
+        if (idx < 0 || idx >= c.history.length) { li.classList.remove('editing'); continue; }
+        const rec = c.history[idx];
+        const right = document.createElement('div');
+        right.className = 'right';
+        const pill = document.createElement('span');
+        pill.className = 'pill ' + (rec.delta > 0 ? 'add' : 'sub');
+        pill.textContent = rec.delta > 0 ? `+${rec.delta}` : `${rec.delta}`;
+        right.appendChild(pill);
+        if (rec.note) { const ns = document.createElement('span'); ns.className = 'history-note'; ns.textContent = rec.note; right.appendChild(ns); }
+        const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = rec.note ? '编辑备注' : '添加备注'; editBtn.style.marginLeft = '8px';
+        editBtn.onclick = () => { try { li.querySelector('button.ghost')?.click(); } catch {} };
+        right.appendChild(editBtn);
+        const cur = li.querySelector('.note-edit, .right');
+        if (cur) li.replaceChild(right, cur);
+        li.classList.remove('editing');
+      }
+    } catch {}
+  };
   list.innerHTML = '';
   // Header meta: name + current value, visually separated
   meta.innerHTML = '';
@@ -742,6 +795,7 @@ function openHistory(id) {
   } else {
     c.history.forEach((h, idx) => {
       const li = document.createElement('li');
+      li.dataset.idx = String(idx);
       const left = document.createElement('div');
       left.className = 'left';
       left.textContent = fmtTime(h.ts);
@@ -766,13 +820,23 @@ function openHistory(id) {
         editBtn.textContent = h.note ? '编辑备注' : '添加备注';
         editBtn.style.marginLeft = '8px';
         const editHandler = () => {
+          // 保证同一时间仅一个编辑器
+          cancelAnyEditing(li);
           // Enter editing mode: hide time(left) via CSS, show editor with slide-in
           li.classList.add('editing');
           const wrap = document.createElement('div');
-          wrap.className = 'note-edit fade-slide-in';
+          wrap.className = 'note-edit';
           const input = document.createElement('input');
           input.type = 'text';
           input.placeholder = '填写备注…';
+          // Reduce autofill and keep neutral typing
+          input.setAttribute('autocomplete', 'off');
+          input.setAttribute('autocapitalize', 'off');
+          input.setAttribute('autocorrect', 'off');
+          input.setAttribute('spellcheck', 'false');
+          input.setAttribute('inputmode', 'text');
+          input.setAttribute('enterkeyhint', 'done');
+          input.setAttribute('name', 'history-note');
           input.value = h.note || '';
           const saveBtn = document.createElement('button');
           saveBtn.className = 'primary';
@@ -851,17 +915,13 @@ function openRename(id, currentName) {
   input.value = currentName || '';
   // Prepare subtle slide-in for input and actions (unified with other UI)
   try {
-    const actions = dialog.querySelector('.modal-actions');
     input.classList.remove('fade-slide-in', 'show');
-    actions && actions.classList.remove('fade-slide-in', 'show');
     // Force reflow so next class addition triggers transition even on repeated opens
     // eslint-disable-next-line no-unused-expressions
     void input.offsetWidth;
     input.classList.add('fade-slide-in');
-    actions && actions.classList.add('fade-slide-in');
     requestAnimationFrame(() => {
       input.classList.add('show');
-      actions && actions.classList.add('show');
     });
   } catch {}
   openModal(dialog);
@@ -1146,6 +1206,9 @@ function setupUI() {
   document.addEventListener('click', () => hidePopover());
   document.addEventListener('click', (e) => {
     try {
+      // 若点击发生在备注浮层内部，直接忽略（不依赖冒泡阻断，兼容部分移动端事件行为）
+      const inNote = e && e.target && e.target.closest && e.target.closest('#note-popover');
+      if (inNote) return;
       const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
       if (now < noteSuppressCloseUntil) return;
     } catch {}
@@ -1179,10 +1242,16 @@ function setupUI() {
         list.forEach((b) => setTimeout(() => { try { b.classList.remove('tap-flash'); } catch {} }, 360));
       } catch {}
     };
+    // Pointer-friendly path
     document.addEventListener('pointerdown', (e) => {
       if (!isTouchLike(e)) return; // 只对触控/笔生效，避免影响桌面 hover
       const btn = e.target && e.target.closest ? e.target.closest('button') : null;
       if (btn) addFlash(btn);
+    }, true);
+    // Fallback for browsers without Pointer Events
+    document.addEventListener('touchstart', (e) => {
+      const t = (e.target && e.target.closest) ? e.target.closest('button') : null;
+      if (t) addFlash(t);
     }, true);
     document.addEventListener('pointerup', (e) => { if (isTouchLike(e)) clearFlash(); }, true);
     document.addEventListener('pointercancel', (e) => { if (isTouchLike(e)) clearFlash(); }, true);
@@ -1312,6 +1381,7 @@ function init() {
   applyPanelRect();
   setupResizeObserver();
   setupKeyboardAvoidance();
+  setupFooter();
   render();
 }
 
@@ -1339,9 +1409,9 @@ function setupKeyboardAvoidance() {
   const vv = window.visualViewport;
   let activeInput = null;
   let originalTransforms = new Map(); // element -> original transform string
-  const BASE_GAP = 12; // base gap above the keyboard
-  const EXTRA_BAR = isChromeMobile() ? 28 : 0; // extra lift for Chrome mobile which adds accessory bar
-  const GAP = BASE_GAP + EXTRA_BAR;
+  const BASE_GAP = 12; // base gap above keyboard or accessory bar
+  const GAP = BASE_GAP; // rely on visualViewport to include any accessory bars
+  const EXTRA_SAFE = 28; // extra clearance to unify behavior across browsers (covers Chrome accessory bar)
 
   const isTextField = (node) => node && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') && !node.disabled && node.type !== 'hidden';
   const getContainerFor = (node) => {
@@ -1375,21 +1445,26 @@ function setupKeyboardAvoidance() {
   };
 
   const adjust = () => {
-    if (!vv || !activeInput || !document.contains(activeInput)) { restoreTransforms(); return; }
+    if (!activeInput || !document.contains(activeInput)) { restoreTransforms(); return; }
     const container = getContainerFor(activeInput);
     if (!container) { restoreTransforms(); return; }
-    // Compute overlap relative to the visual viewport (accounts for offsetTop on iOS)
+    // 统一用“页面坐标”计算遮挡，避免不同浏览器对 rect/visualViewport 基准不一致
     const r = activeInput.getBoundingClientRect();
-    const vvTop = vv.offsetTop || 0;
-    const vvHeight = vv.height || window.innerHeight;
-    const bottomRelToVV = r.bottom - vvTop;
-    const overlap = bottomRelToVV + GAP - vvHeight;
-    const shift = Math.max(0, Math.ceil(overlap));
+    const pageScrollY = (window.scrollY || window.pageYOffset || 0);
+    // Visual viewport metrics
+    const vvOffsetTop = vv ? (vv.offsetTop || 0) : 0; // relative to layout viewport, for fixed elements
+    const vvClientHeight = vv ? (vv.height || window.innerHeight) : window.innerHeight;
+    // Visual viewport bottom in page coordinates (for document elements)
+    const vvPageTop = vv ? ((typeof vv.pageTop === 'number') ? vv.pageTop : (pageScrollY + vvOffsetTop)) : pageScrollY;
+    const pageVVBottom = vvPageTop + vvClientHeight;
+    const pageElBottom = r.bottom + pageScrollY;
+    const overlap = pageElBottom + GAP - pageVVBottom;
+    let shift = Math.max(0, Math.ceil(overlap));
 
     if (container.id === 'note-popover') {
       // Reposition the fixed popover upward just enough
       const popRect = container.getBoundingClientRect();
-      const maxTop = (vvTop + vvHeight) - popRect.height - GAP;
+      const maxTop = (vvOffsetTop + vvClientHeight) - popRect.height - GAP;
       let curTop = parseFloat(container.style.top || '0');
       // style.top is in px relative to layout viewport; adjust by delta needed
       // Compute desired top so that input sits above keyboard
@@ -1404,8 +1479,12 @@ function setupKeyboardAvoidance() {
       return;
     }
 
-    // For dialogs or the main panel, translate vertically by -shift
+    // For dialogs or the main panel, translate vertically by -shift（相对其原始 transform）
     if (shift > 0) {
+      // Unify across browsers by adding a small extra clearance (matches Quark/stock browser behavior)
+      if (!(container && container.id === 'note-popover')) {
+        shift += EXTRA_SAFE;
+      }
       storeTransform(container);
       const base = originalTransforms.get(container) || '';
       container.classList.add('kb-avoid');
@@ -1421,6 +1500,8 @@ function setupKeyboardAvoidance() {
       activeInput = t;
       // Slight delay allows UA to finish viewport resize
       setTimeout(adjust, 0);
+      // Run a second pass after viewport/IME settles
+      setTimeout(adjust, 90);
     }
   });
   document.addEventListener('focusout', (e) => {
@@ -1437,6 +1518,27 @@ function setupKeyboardAvoidance() {
     window.addEventListener('resize', adjust);
     window.addEventListener('scroll', adjust, true);
   }
+}
+
+// Footer: only repo link and privacy dialog
+function setupFooter() {
+  const footer = document.querySelector('.app-footer');
+  if (!footer) return;
+  // year
+  const y = document.querySelector('#footer-year');
+  if (y) y.textContent = String(new Date().getFullYear());
+  // repo link (can be customized via data-repo on footer)
+  const repoUrl = footer.getAttribute('data-repo') || '';
+  const repoEl = document.querySelector('#footer-repo');
+  if (repoEl) {
+    if (repoUrl) repoEl.href = repoUrl; else repoEl.remove();
+  }
+  // privacy dialog
+  const openBtn = document.querySelector('#footer-privacy');
+  const closeBtn = document.querySelector('#privacy-close');
+  const dlg = document.querySelector('#privacy-dialog');
+  if (openBtn && dlg) openBtn.addEventListener('click', () => openModal(dlg));
+  if (closeBtn && dlg) closeBtn.addEventListener('click', () => closeModal(dlg));
 }
 
 // Global menu popover content
@@ -1483,12 +1585,11 @@ function showGlobalMenu(anchorRect) {
 
 // 手动强制更新：清理缓存、唤醒新 SW 并重载
 async function forceUpdateAssets() {
-  const CACHE_PREFIX = 'counter-buddy-web-';
   const clearCaches = async () => {
     try {
       if (!('caches' in window)) return;
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX)).map((k) => caches.delete(k)));
+      await Promise.all(keys.map((k) => caches.delete(k)));
     } catch {}
   };
   const hardReload = () => {
@@ -1510,7 +1611,12 @@ async function forceUpdateAssets() {
     try { reg.waiting && reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch {}
     try { reg.installing && reg.installing.postMessage({ type: 'SKIP_WAITING' }); } catch {}
     try { await reg.update(); } catch {}
-    // 若 1s 内没有触发 controllerchange，则强制重载
-    setTimeout(() => { if (!reloaded) hardReload(); }, 1000);
+    // 强化路径：若 800ms 内无控制权变化，则直接注销并硬刷新，彻底规避旧缓存
+    setTimeout(async () => {
+      if (reloaded) return;
+      try { await reg.unregister(); } catch {}
+      try { await clearCaches(); } catch {}
+      hardReload();
+    }, 800);
   } catch { hardReload(); }
 }
