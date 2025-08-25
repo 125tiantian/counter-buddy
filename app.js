@@ -1539,6 +1539,13 @@ function setupFooter() {
   const dlg = document.querySelector('#privacy-dialog');
   if (openBtn && dlg) openBtn.addEventListener('click', () => openModal(dlg));
   if (closeBtn && dlg) closeBtn.addEventListener('click', () => closeModal(dlg));
+
+  // help dialog
+  const helpOpen = document.querySelector('#footer-help');
+  const helpClose = document.querySelector('#help-close');
+  const helpDlg = document.querySelector('#help-dialog');
+  if (helpOpen && helpDlg) helpOpen.addEventListener('click', () => openModal(helpDlg));
+  if (helpClose && helpDlg) helpClose.addEventListener('click', () => closeModal(helpDlg));
 }
 
 // Global menu popover content
