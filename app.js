@@ -48,6 +48,17 @@ function closeModal(dialog) {
   setTimeout(onDone, 200);
 }
 
+// Enable closing a dialog when clicking on its backdrop
+function enableBackdropClose(dialog, handler) {
+  if (!dialog) return;
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) {
+      if (typeof handler === 'function') handler();
+      else closeModal(dialog);
+    }
+  });
+}
+
 async function confirmDialog({ title = '请确认', text = '', danger = true, okText = '确定', cancelText = '取消' } = {}) {
   return new Promise((resolve) => {
     const dlg = el('#confirm-dialog');
@@ -64,10 +75,16 @@ async function confirmDialog({ title = '请确认', text = '', danger = true, ok
     okBtn.classList.toggle('danger', !!danger);
     okBtn.classList.toggle('primary', !danger);
 
-    const finish = (val) => { closeModal(dlg); resolve(val); };
+    const finish = (val) => {
+      dlg.removeEventListener('click', onBackdrop);
+      closeModal(dlg);
+      resolve(val);
+    };
+    const onBackdrop = (e) => { if (e.target === dlg) finish(false); };
     okBtn.onclick = () => finish(true);
     cancelBtn.onclick = () => finish(false);
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(false); }, { once: true });
+    dlg.addEventListener('click', onBackdrop);
     openModal(dlg);
   });
 }
@@ -1166,8 +1183,14 @@ function setupUI() {
   // Animate Esc/backdrop dismiss
   const histDlg = el('#history-dialog');
   const renDlg = el('#rename-dialog');
-  if (histDlg) histDlg.addEventListener('cancel', (e) => { e.preventDefault(); closeModal(histDlg); });
-  if (renDlg) renDlg.addEventListener('cancel', (e) => { e.preventDefault(); closeModal(renDlg); });
+  if (histDlg) {
+    histDlg.addEventListener('cancel', (e) => { e.preventDefault(); closeModal(histDlg); });
+    enableBackdropClose(histDlg);
+  }
+  if (renDlg) {
+    renDlg.addEventListener('cancel', (e) => { e.preventDefault(); closeModal(renDlg); });
+    enableBackdropClose(renDlg);
+  }
 
   // Opacity: only meaningful in desktop shell (floating panel). In web/PWA we hide it.
   const opacityEl = el('#opacity');
@@ -1539,6 +1562,7 @@ function setupFooter() {
   const dlg = document.querySelector('#privacy-dialog');
   if (openBtn && dlg) openBtn.addEventListener('click', () => openModal(dlg));
   if (closeBtn && dlg) closeBtn.addEventListener('click', () => closeModal(dlg));
+  enableBackdropClose(dlg);
 
   // help dialog
   const helpOpen = document.querySelector('#footer-help');
@@ -1546,6 +1570,7 @@ function setupFooter() {
   const helpDlg = document.querySelector('#help-dialog');
   if (helpOpen && helpDlg) helpOpen.addEventListener('click', () => openModal(helpDlg));
   if (helpClose && helpDlg) helpClose.addEventListener('click', () => closeModal(helpDlg));
+  enableBackdropClose(helpDlg);
 }
 
 // Global menu popover content
