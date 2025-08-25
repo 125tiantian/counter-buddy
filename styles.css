@@ -576,10 +576,10 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
   left: 50%;
   bottom: 8px;
   transform: translateX(-50%);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--muted);
   letter-spacing: .2px;
-  opacity: .85;
+  opacity: .6;
   user-select: none;
   z-index: 1;
   display: inline-flex;
