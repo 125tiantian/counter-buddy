@@ -284,8 +284,6 @@ button {
 }
 @media (hover: hover) {
   button:not(:disabled):hover { filter: brightness(1.04); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,.15); }
-  /* PC: hover时点点持续跳动（与原样一致） */
-  .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) infinite; }
 }
 button:not(:disabled):active { transform: translateY(1px); }
 /* Avoid icon menu button bouncing on tap */
@@ -448,7 +446,8 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 .btn-ellipsis .dots { display: inline-flex; gap: 3px; align-items: center; justify-content: center; }
 .btn-ellipsis .dots i { width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: .85; display: inline-block; }
 @media (hover: hover) {
-  .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) 1; }
+  /* PC：悬浮时点点保持循环跳动，与移动端展开态一致 */
+  .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) infinite; }
   .btn-ellipsis:not(:disabled):hover .dots i:nth-child(2) { animation-delay: .08s; }
   .btn-ellipsis:not(:disabled):hover .dots i:nth-child(3) { animation-delay: .16s; }
 }
