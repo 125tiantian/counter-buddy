@@ -209,7 +209,7 @@ function hideNotePopover() {
   if (noteFocusTimer) { try { clearTimeout(noteFocusTimer); } catch {} noteFocusTimer = null; }
 }
 
-function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
+function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…', options = null) {
   // Avoid stacking with other popovers
   try { hidePopover(); } catch {}
   const p = ensureNotePopover();
@@ -229,7 +229,18 @@ function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
   input.setAttribute('inputmode', 'text');
   input.setAttribute('enterkeyhint', 'done');
   input.setAttribute('name', 'quick-note');
-  const ok = document.createElement('button'); ok.textContent = '保存'; ok.className = 'primary';
+  const ok = document.createElement('button'); ok.className = 'primary';
+  // Dynamic OK label for record mode
+  const dynamicOk = options && options.dynamicOk;
+  const emptyLabel = (options && options.emptyLabel) || '直接记录';
+  const filledLabel = (options && options.filledLabel) || '添加记录';
+  const defaultLabel = (options && options.defaultLabel) || '保存';
+  const updateOkLabel = () => {
+    if (!dynamicOk) { ok.textContent = defaultLabel; return; }
+    const hasText = !!input.value.trim();
+    ok.textContent = hasText ? filledLabel : emptyLabel;
+  };
+  updateOkLabel();
   const cancel = document.createElement('button'); cancel.textContent = '取消';
   wrap.append(input, ok, cancel);
   p.appendChild(wrap);
@@ -248,9 +259,9 @@ function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
   noteCommit = onCommit;
   try {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-    // 适当延长抬手后的保护窗口，避免因系统合成 click 导致立即关闭或失焦
-    noteSuppressCloseUntil = now + 900;
-  } catch { noteSuppressCloseUntil = Date.now() + 900; }
+    // 缩短保护窗口，避免需要点两次才能关闭（保留对“长按合成 click”的防抖）
+    noteSuppressCloseUntil = now + 250;
+  } catch { noteSuppressCloseUntil = Date.now() + 250; }
   noteIgnoreNextClick = 1; // 吞掉弹出后的第一个全局 click
   // 统一延时 250ms 再聚焦，规避长按抬手与系统合成 click 造成的闪退
   if (noteFocusTimer) { try { clearTimeout(noteFocusTimer); } catch {} }
@@ -268,6 +279,7 @@ function showQuickNote(anchorRect, onCommit, placeholder = '填写备注…') {
   };
   ok.onclick = () => finish(true);
   cancel.onclick = () => finish(false);
+  input.addEventListener('input', updateOkLabel);
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); finish(true); }
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
@@ -400,6 +412,42 @@ function addHistory(c, delta, note) {
   // keep last N if needed; for now, keep all
 }
 
+// Minimal UI refresh for a single counter card (avoid full re-render flicker)
+function updateCounterView(id, animate = true) {
+  try {
+    const c = state.counters.find((x) => x.id === id);
+    if (!c) return;
+    const card = document.querySelector(`.card[data-id="${id}"]`);
+    if (!card) return;
+    const badge = card.querySelector('.badge');
+    if (badge) {
+      badge.textContent = String(c.count);
+      if (animate) {
+        try {
+          badge.classList.remove('flip');
+          void badge.offsetWidth;
+          badge.classList.add('flip');
+          setTimeout(() => badge.classList.remove('flip'), 500);
+        } catch {}
+      }
+    }
+    const minus = card.querySelector('.btn-minus');
+    if (minus) minus.disabled = c.count <= 0;
+    const meta = card.querySelector('.stack .muted');
+    if (meta) meta.textContent = `更新 ${timeAgo(c.updatedAt)}`;
+  } catch {}
+}
+
+// Add a record entry (delta = 0) without changing count
+function addRecord(id, note) {
+  const c = state.counters.find((x) => x.id === id);
+  if (!c) return;
+  addHistory(c, 0, note || '');
+  c.updatedAt = nowISO();
+  save();
+  render();
+}
+
 function inc(id, delta = +1, note) {
   const c = state.counters.find((x) => x.id === id);
   if (!c) return;
@@ -425,6 +473,15 @@ function fmtTime(s) {
   const pad = (n) => String(n).padStart(2, '0');
   // 显示：月、日、时、分（不含年与秒）
   return `${d.getMonth() + 1}月${pad(d.getDate())}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// Split into date and time strings for two-line layout in history list
+function fmtDateParts(s) {
+  const d = new Date(s);
+  const pad = (n) => String(n).padStart(2, '0');
+  const date = `${d.getMonth() + 1}月${pad(d.getDate())}日`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return [date, time];
 }
 
 function render() {
@@ -467,14 +524,16 @@ function render() {
     right.className = 'actions';
     const minus = document.createElement('button');
     minus.textContent = '−1';
-    minus.title = '减少 1';
+    // Remove tooltip; keep accessible label
+    try { minus.setAttribute('aria-label', '减少 1'); } catch {}
     minus.className = 'btn-minus ghost round btn-icon';
     // Use click listener to blur after action to avoid sticky focus
     minus.addEventListener('click', (e) => { inc(c.id, -1); try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} });
     const plus = document.createElement('button');
     plus.textContent = '+1';
     plus.className = 'primary round btn-icon';
-    plus.title = '增加 1';
+    // Remove tooltip; keep accessible label
+    try { plus.setAttribute('aria-label', '增加 1'); } catch {}
     plus.className += ' btn-plus';
     // Click to +1；长按或 Shift 点击弹“快速备注”应用内浮窗
     let holdTimer = null; let consumedByHold = false;
@@ -513,12 +572,31 @@ function render() {
     plus.addEventListener('pointerleave', clearHold);
     // 屏蔽长按产生的系统上下文菜单，避免干扰备注输入
     plus.addEventListener('contextmenu', (e) => { try { e.preventDefault(); } catch {} });
+
+    // Quick record button (note without changing count)
+    const quick = document.createElement('button');
+    quick.className = 'tonal round btn-icon';
+    // Use aria-label for accessibility without browser tooltip
+    try { quick.setAttribute('aria-label', '快速记录'); } catch {}
+    quick.textContent = '记';
+    quick.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = quick.getBoundingClientRect();
+      showQuickNote(r, (note) => addRecord(c.id, note || ''), '快速记录…', {
+        dynamicOk: true,
+        emptyLabel: '直接记录',
+        filledLabel: '添加记录',
+        defaultLabel: '保存',
+      });
+      try { quick.blur(); } catch {}
+    });
     // minus disabled at 0
     minus.disabled = c.count <= 0;
 
     // More button -> floating popover
     const more = document.createElement('button');
-    more.title = '更多';
+    // Use aria-label for accessibility without browser tooltip
+    try { more.setAttribute('aria-label', '更多'); } catch {}
     more.className = 'btn-menu btn-ellipsis ghost round btn-icon';
     const dots = document.createElement('span');
     dots.className = 'dots';
@@ -558,7 +636,7 @@ function render() {
     more.addEventListener('pointerup', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
     more.addEventListener('touchend', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
 
-    right.append(minus, plus, more);
+    right.append(minus, plus, quick, more);
     card.append(left, right);
     if (lastAddedId === c.id) {
       card.classList.add('enter');
@@ -608,79 +686,205 @@ function runNameAnimation(nameEl, oldText, newText) {
 function setupDnD() {
   const container = el('#counters');
   const cards = Array.from(container.querySelectorAll('.card'));
-  // On touch devices, disable HTML5 drag-n-drop to avoid accidental long-press drags
-  // Users can use the "更多" menu (上移/下移/置顶/置底) instead on mobile.
+
+  // Touch 设备：禁用指针拖拽（用“更多”菜单排序）
   try {
     if (isTouchDevice()) {
-      cards.forEach((card) => {
-        try { card.removeAttribute('draggable'); } catch {}
-        card.classList.remove('dragging', 'drag-origin', 'drop-top', 'drop-bottom');
-      });
+      cards.forEach((card) => card.classList.remove('dragging', 'drag-origin', 'drop-top', 'drop-bottom'));
       return;
     }
   } catch {}
-  cards.forEach((card) => {
-    card.setAttribute('draggable', 'true');
-    card.addEventListener('dragstart', (e) => {
-      // Avoid starting drag from interactive controls
-      if (e.target && e.target.closest && e.target.closest('button, input, label, select, textarea')) {
-        e.preventDefault();
-        return;
+
+  // 自定义 Pointer 拖拽（可用滚轮，配合边缘自动滚动）
+  let autoScrollRAF = null; let lastClientY = 0;
+  const EDGE = 90, MAX_SPEED = 12; const ease = (t) => t * t;
+  // FLIP helpers for sibling animations (exclude the floating dragged card)
+  const measureTops = () => {
+    const map = {};
+    const list = Array.from(container.querySelectorAll('.card'));
+    for (const n of list) {
+      if (n.classList.contains('dragging')) continue;
+      const id = n.dataset.id;
+      map[id] = n.getBoundingClientRect().top;
+    }
+    return map;
+  };
+  const applyFlipMaps = (prev, next) => {
+    try {
+      const list = Array.from(container.querySelectorAll('.card'));
+      for (const n of list) {
+        if (n.classList.contains('dragging')) continue;
+        const id = n.dataset.id;
+        if (!(id in prev) || !(id in next)) continue;
+        const dy = prev[id] - next[id];
+        if (Math.abs(dy) < 0.5) continue;
+        // Pre-promote to reduce text flicker during FLIP
+        n.style.willChange = 'transform';
+        n.style.transition = 'none';
+        n.style.transform = `translate3d(0, ${dy}px, 0)`;
+        requestAnimationFrame(() => {
+          n.style.transition = 'transform .20s cubic-bezier(.2,.7,.2,1)';
+          n.style.transform = 'translate3d(0, 0, 0)';
+          setTimeout(() => { try { n.style.transition = ''; n.style.transform = ''; n.style.willChange = ''; } catch {} }, 260);
+        });
       }
-      dragId = card.dataset.id;
-      card.classList.add('dragging', 'drag-origin');
+    } catch {}
+  };
+  const startAutoScroll = () => {
+    if (autoScrollRAF) return;
+    const step = () => {
+      if (!dragId) { autoScrollRAF = null; return; }
       try {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', dragId);
-        createDragImage(card, e);
+        const rect = container.getBoundingClientRect();
+        let dy = 0;
+        if (lastClientY < rect.top + EDGE) { const t = Math.max(0, rect.top + EDGE - lastClientY) / EDGE; dy = -Math.ceil(ease(t) * MAX_SPEED); }
+        else if (lastClientY > rect.bottom - EDGE) { const t = Math.max(0, lastClientY - (rect.bottom - EDGE)) / EDGE; dy = Math.ceil(ease(t) * MAX_SPEED); }
+        if (dy) container.scrollBy(0, dy);
       } catch {}
-    });
-    card.addEventListener('dragend', () => {
-      dragId = null;
-      card.classList.remove('dragging', 'drag-origin');
-      clearDropIndicators();
-      removeDragImage();
-    });
-    card.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      const rect = card.getBoundingClientRect();
-      const y = e.clientY;
-      const isTop = y < rect.top + rect.height / 2;
-      card.classList.toggle('drop-top', isTop);
-      card.classList.toggle('drop-bottom', !isTop);
-    });
-    card.addEventListener('dragleave', () => {
-      card.classList.remove('drop-top', 'drop-bottom');
-    });
-    card.addEventListener('drop', (e) => {
-      e.preventDefault();
-      const overCard = card;
-      const overId = overCard.dataset.id;
-      const overRect = overCard.getBoundingClientRect();
-      const isTop = e.clientY < overRect.top + overRect.height / 2;
-      clearDropIndicators();
-      if (!dragId || dragId === overId) return;
-      const srcIdx = state.counters.findIndex((x) => x.id === dragId);
-      const dstIdxBase = state.counters.findIndex((x) => x.id === overId);
-      let dstIdx = isTop ? dstIdxBase : dstIdxBase + 1;
-      if (dstIdx > srcIdx) dstIdx -= 1; // adjust for removal
-      if (srcIdx < 0 || dstIdx < 0 || srcIdx === dstIdx) return;
-      // FLIP: capture positions before reflow
-      pendingFlip = measureCardPositions();
-      reorderCounters(srcIdx, dstIdx);
-    });
-  });
-  // allow dropping to end when over empty area
-  container.addEventListener('dragover', (e) => { e.preventDefault(); });
-  container.addEventListener('drop', (e) => {
-    if (!dragId) return;
-    const targetCard = e.target.closest && e.target.closest('.card');
-    if (targetCard) return; // handled above
-    const srcIdx = state.counters.findIndex((x) => x.id === dragId);
-    const dstIdx = state.counters.length - 1; // move to end
-    if (srcIdx < 0 || srcIdx === dstIdx) return;
-    pendingFlip = measureCardPositions();
-    reorderCounters(srcIdx, dstIdx);
+      autoScrollRAF = requestAnimationFrame(step);
+    };
+    autoScrollRAF = requestAnimationFrame(step);
+  };
+  const stopAutoScroll = () => { if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; } };
+
+  const onPointerDown = (e, card) => {
+    if (e.button !== 0) return;
+    if (e.target && e.target.closest && e.target.closest('button, input, label, select, textarea')) return;
+    e.preventDefault();
+    try { card.setPointerCapture && card.setPointerCapture(e.pointerId); } catch {}
+    const srcIdx = state.counters.findIndex((x) => x.id === card.dataset.id);
+    if (srcIdx < 0) return;
+    dragId = card.dataset.id;
+    const cardRect = card.getBoundingClientRect();
+    const contRect = container.getBoundingClientRect();
+    const offsetY = e.clientY - cardRect.top;
+    lastClientY = e.clientY;
+    document.body.classList.add('dragging-global');
+    document.body.style.userSelect = 'none';
+
+    // 先测量，再同时把卡片从文档流拿起并插入占位，统一做一次 FLIP，避免两次跳变
+    const prevMapOnPickup = measureTops();
+    // 浮动原卡片（先脱离文档流）
+    card.classList.add('dragging');
+    const prev = { position: card.style.position, left: card.style.left, top: card.style.top, width: card.style.width, zIndex: card.style.zIndex, pointerEvents: card.style.pointerEvents };
+    card.__prevStyle = prev;
+    card.style.position = 'fixed';
+    card.style.left = cardRect.left + 'px';
+    card.style.top = (e.clientY - offsetY) + 'px';
+    card.style.width = cardRect.width + 'px';
+    card.style.zIndex = '1001';
+    card.style.pointerEvents = 'none';
+    // 占位器：保持文档流
+    const ph = document.createElement('div');
+    ph.style.height = cardRect.height + 'px';
+    ph.style.margin = getComputedStyle(card).margin;
+    ph.className = 'card-placeholder';
+    card.parentNode.insertBefore(ph, card);
+    // 插占位+卡片脱流 后量一次，触发其它卡片的 FLIP 动画以体现“补位”
+    applyFlipMaps(prevMapOnPickup, measureTops());
+
+    // 用于节流：仅当占位符的索引变化时才进行 FLIP
+    let lastPhIndex = Array.from(container.children).indexOf(ph);
+
+    // 提起时的轻微上浮动画（transform/阴影走过渡，不影响跟手性）
+    card.style.transition = 'transform .14s ease, box-shadow .14s ease';
+    try { card.style.transform = 'translateY(-2px) scale(1.01)'; } catch {}
+
+    const onMove = (ev) => {
+      lastClientY = ev.clientY || lastClientY;
+      card.style.top = (ev.clientY - offsetY) + 'px';
+      startAutoScroll();
+      // 判断插入位置
+      const contentY = container.scrollTop + (ev.clientY - contRect.top);
+      const siblings = Array.from(container.querySelectorAll('.card')).filter(n => n !== card);
+      let target = null;
+      for (const sib of siblings) {
+        const center = sib.offsetTop + sib.offsetHeight / 2;
+        if (contentY < center) { target = sib; break; }
+      }
+      const beforeIndex = lastPhIndex;
+      let newIndex;
+      if (target) {
+        newIndex = Array.from(container.children).indexOf(target);
+      } else {
+        newIndex = container.children.length; // append to end
+      }
+      if (newIndex !== beforeIndex && !(target === ph.nextSibling)) {
+        const prevMap = measureTops();
+        if (target) container.insertBefore(ph, target); else container.appendChild(ph);
+        lastPhIndex = Array.from(container.children).indexOf(ph);
+        applyFlipMaps(prevMap, measureTops());
+      }
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      stopAutoScroll();
+      document.body.classList.remove('dragging-global');
+      document.body.style.userSelect = '';
+      // 计算目标索引
+      const src = state.counters.findIndex((x) => x.id === dragId);
+      let dstIdxBase = state.counters.length;
+      const before = ph.nextElementSibling && ph.nextElementSibling.classList.contains('card') ? ph.nextElementSibling : null;
+      if (before) {
+        const beforeId = before.dataset.id; dstIdxBase = state.counters.findIndex((x) => x.id === beforeId);
+      }
+      let dst = dstIdxBase; if (dst > src) dst -= 1;
+      // 目标位置（占位符）
+      let targetRect = null;
+      try { targetRect = ph.getBoundingClientRect(); } catch {}
+
+      // 立即开始将浮动卡片滑入占位符位置，避免“松手后卡片不动”的延迟感
+      if (targetRect) {
+        try {
+          card.style.transition = 'top .18s cubic-bezier(.2,.7,.2,1), left .18s cubic-bezier(.2,.7,.2,1), transform .18s ease, box-shadow .18s ease';
+          card.style.left = targetRect.left + 'px';
+          card.style.top = targetRect.top + 'px';
+          card.style.transform = 'none';
+        } catch {}
+      }
+
+      const cleanupNoMove = () => {
+        // 回原位：还原样式并移除占位符
+        const s = card.__prevStyle || {};
+        card.style.position = s.position || '';
+        card.style.left = s.left || '';
+        card.style.top = s.top || '';
+        card.style.width = s.width || '';
+        card.style.zIndex = s.zIndex || '';
+        card.style.pointerEvents = s.pointerEvents || '';
+        card.style.transition = '';
+        card.style.transform = '';
+        card.classList.remove('dragging');
+        try { ph.parentNode && ph.parentNode.removeChild(ph); } catch {}
+        dragId = null;
+      };
+
+      const cleanupMove = () => {
+        // 为避免重渲染产生“卡片一分为二”的闪烁，先移除浮动卡片，再重排
+        try { card.parentNode && card.parentNode.removeChild(card); } catch {}
+        reorderCounters(src, dst); // render() 会清掉占位符
+        dragId = null;
+      };
+
+      // 在滑入动画结束后执行最终重排/复位；加兜底定时器
+      let handled = false;
+      const onSlideEnd = (ev) => {
+        if (handled) return; handled = true;
+        try { card.removeEventListener('transitionend', onSlideEnd, true); } catch {}
+        if (src >= 0 && dst >= 0 && src !== dst) cleanupMove(); else cleanupNoMove();
+      };
+      try { card.addEventListener('transitionend', onSlideEnd, true); } catch {}
+      setTimeout(onSlideEnd, 220);
+    };
+
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  };
+
+  cards.forEach((card) => {
+    try { card.removeAttribute('draggable'); } catch {}
+    card.addEventListener('pointerdown', (e) => onPointerDown(e, card));
   });
 }
 
@@ -707,12 +911,13 @@ function applyFlipAnimations(prev) {
     const newTop = card.getBoundingClientRect().top;
     const dy = oldTop - newTop;
     if (Math.abs(dy) < 1) return;
+    card.style.willChange = 'transform';
     card.style.transition = 'none';
-    card.style.transform = `translateY(${dy}px)`;
+    card.style.transform = `translate3d(0, ${dy}px, 0)`;
     requestAnimationFrame(() => {
       card.style.transition = 'transform .18s ease';
-      card.style.transform = 'translateY(0)';
-      setTimeout(() => { card.style.transition = ''; card.style.transform = ''; }, 220);
+      card.style.transform = 'translate3d(0, 0, 0)';
+      setTimeout(() => { card.style.transition = ''; card.style.transform = ''; card.style.willChange = ''; }, 220);
     });
   });
 }
@@ -762,6 +967,8 @@ function openHistory(id) {
   if (!c) return;
   const dialog = el('#history-dialog');
   const list = el('#history-list');
+  // Reset any min-height lock from previous runs
+  try { list.style.minHeight = ''; } catch {}
   const meta = el('#history-meta');
   // Helper: ensure only one inline editor open at a time
   const cancelAnyEditing = (exceptLi) => {
@@ -773,18 +980,31 @@ function openHistory(id) {
         if (cancelBtn) { cancelBtn.click(); continue; }
         // Fallback: rebuild to default view using data-index
         const idx = Number(li.dataset.idx || -1);
-        if (idx < 0 || idx >= c.history.length) { li.classList.remove('editing'); continue; }
-        const rec = c.history[idx];
+        const ts = li.dataset.ts;
+        let rec = null;
+        if (ts) rec = c.history.find((h) => h && h.ts === ts) || null;
+        if (!rec && idx >= 0 && idx < c.history.length) rec = c.history[idx];
+        if (!rec) { li.classList.remove('editing'); continue; }
         const right = document.createElement('div');
         right.className = 'right';
+        // Controls first (float right), then note so the first line shows note on the left
         const pill = document.createElement('span');
-        pill.className = 'pill ' + (rec.delta > 0 ? 'add' : 'sub');
-        pill.textContent = rec.delta > 0 ? `+${rec.delta}` : `${rec.delta}`;
+        const cls = (rec.delta > 0) ? 'add' : (rec.delta < 0 ? 'sub' : 'note');
+        pill.className = 'pill ' + cls;
+        pill.textContent = (rec.delta > 0) ? `+${rec.delta}` : (rec.delta < 0 ? `${rec.delta}` : '记录');
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-icon btn-icon-sm btn-danger round';
+        // Icon-only: add aria-label instead of title
+        try { delBtn.setAttribute('aria-label', '删除记录'); } catch {}
+        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        delBtn.onclick = () => deleteHistoryEntryByTs(id, rec.ts);
+        const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = rec.note ? '编辑' : '添加'; editBtn.style.marginLeft = '8px';
+        editBtn.onclick = () => { try { li.querySelector('button.ghost')?.click(); } catch {} };
+        // Append floats in reverse for right-floating layout: delete -> edit -> pill
+        right.appendChild(delBtn);
+        right.appendChild(editBtn);
         right.appendChild(pill);
         if (rec.note) { const ns = document.createElement('span'); ns.className = 'history-note'; ns.textContent = rec.note; right.appendChild(ns); }
-        const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = rec.note ? '编辑备注' : '添加备注'; editBtn.style.marginLeft = '8px';
-        editBtn.onclick = () => { try { li.querySelector('button.ghost')?.click(); } catch {} };
-        right.appendChild(editBtn);
         const cur = li.querySelector('.note-edit, .right');
         if (cur) li.replaceChild(right, cur);
         li.classList.remove('editing');
@@ -813,28 +1033,23 @@ function openHistory(id) {
     c.history.forEach((h, idx) => {
       const li = document.createElement('li');
       li.dataset.idx = String(idx);
+      li.dataset.ts = h.ts;
       const left = document.createElement('div');
       left.className = 'left';
-      left.textContent = fmtTime(h.ts);
+      const [dStr, tStr] = fmtDateParts(h.ts);
+      left.innerHTML = `<div class="d">${dStr}</div><div class="t">${tStr}</div>`;
       const right = document.createElement('div');
       right.className = 'right';
       const pill = document.createElement('span');
-      pill.className = 'pill ' + (h.delta > 0 ? 'add' : 'sub');
-      pill.textContent = h.delta > 0 ? `+${h.delta}` : `${h.delta}`;
-      right.appendChild(pill);
+      const pcls = (h.delta > 0) ? 'add' : (h.delta < 0 ? 'sub' : 'note');
+      pill.className = 'pill ' + pcls;
+      pill.textContent = (h.delta > 0) ? `+${h.delta}` : (h.delta < 0 ? `${h.delta}` : '记录');
 
       const appendNoteAndEdit = () => {
-        // Note text
-        if (h.note) {
-          const noteSpan = document.createElement('span');
-          noteSpan.className = 'history-note';
-          noteSpan.textContent = h.note;
-          right.appendChild(noteSpan);
-        }
-        // Edit note inline button
+        // Edit note inline button (float right)
         const editBtn = document.createElement('button');
         editBtn.className = 'ghost';
-        editBtn.textContent = h.note ? '编辑备注' : '添加备注';
+        editBtn.textContent = h.note ? '编辑' : '添加';
         editBtn.style.marginLeft = '8px';
         const editHandler = () => {
           // 保证同一时间仅一个编辑器
@@ -874,8 +1089,23 @@ function openHistory(id) {
             const newRight = document.createElement('div');
             newRight.className = 'right fade-slide-in';
             const pill2 = document.createElement('span');
-            pill2.className = 'pill ' + (h.delta > 0 ? 'add' : 'sub');
-            pill2.textContent = h.delta > 0 ? `+${h.delta}` : `${h.delta}`;
+            const p2cls = (h.delta > 0) ? 'add' : (h.delta < 0 ? 'sub' : 'note');
+            pill2.className = 'pill ' + p2cls;
+            pill2.textContent = (h.delta > 0) ? `+${h.delta}` : (h.delta < 0 ? `${h.delta}` : '记录');
+            const againBtn = document.createElement('button');
+            againBtn.className = 'ghost';
+            againBtn.textContent = h.note ? '编辑' : '添加';
+            againBtn.style.marginLeft = '8px';
+            againBtn.onclick = editHandler; // reuse handler
+            const delBtn2 = document.createElement('button');
+            delBtn2.className = 'btn-icon btn-icon-sm btn-danger round';
+            // Icon-only: add aria-label instead of title
+            try { delBtn2.setAttribute('aria-label', '删除记录'); } catch {}
+            delBtn2.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            delBtn2.onclick = () => deleteHistoryEntryByTs(id, h.ts);
+            // Append in reverse for right-floating
+            newRight.appendChild(delBtn2);
+            newRight.appendChild(againBtn);
             newRight.appendChild(pill2);
             if (h.note) {
               const noteSpan2 = document.createElement('span');
@@ -883,13 +1113,6 @@ function openHistory(id) {
               noteSpan2.textContent = h.note;
               newRight.appendChild(noteSpan2);
             }
-            // re-add edit button
-            const againBtn = document.createElement('button');
-            againBtn.className = 'ghost';
-            againBtn.textContent = h.note ? '编辑备注' : '添加备注';
-            againBtn.style.marginLeft = '8px';
-            againBtn.onclick = editHandler; // reuse handler
-            newRight.appendChild(againBtn);
             li.replaceChild(newRight, wrap);
             requestAnimationFrame(() => newRight.classList.add('show'));
             li.classList.remove('editing');
@@ -897,10 +1120,13 @@ function openHistory(id) {
 
           const onFinish = (commit) => {
             if (commit) {
-              c.history[idx].note = input.value.trim();
-              h.note = c.history[idx].note; // keep local ref updated
-              c.updatedAt = nowISO();
-              save();
+              const j = c.history.findIndex((x) => x && x.ts === h.ts);
+              if (j !== -1) {
+                c.history[j].note = input.value.trim();
+                h.note = c.history[j].note; // keep local ref updated
+                c.updatedAt = nowISO();
+                save();
+              }
             }
             restoreView();
           };
@@ -913,7 +1139,24 @@ function openHistory(id) {
           });
         };
         editBtn.onclick = editHandler;
+        // Delete icon button (float right)
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-icon btn-icon-sm btn-danger round';
+        // Icon-only: add aria-label instead of title
+        try { delBtn.setAttribute('aria-label', '删除记录'); } catch {}
+        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        delBtn.onclick = () => deleteHistoryEntryByTs(id, h.ts);
+        // Append floats in reverse order for right-floating: delete -> edit -> pill
+        right.appendChild(delBtn);
         right.appendChild(editBtn);
+        right.appendChild(pill);
+        // Note text (comes last so first line uses leftover space)
+        if (h.note) {
+          const noteSpan = document.createElement('span');
+          noteSpan.className = 'history-note';
+          noteSpan.textContent = h.note;
+          right.appendChild(noteSpan);
+        }
       };
 
       appendNoteAndEdit();
@@ -924,6 +1167,121 @@ function openHistory(id) {
 
   dialog.returnValue = '';
   openModal(dialog);
+}
+
+// Reverted experimental two-part note layout
+
+// Delete a single history record by index (does not change count)
+function deleteHistoryEntry(id, idx) {
+  const c = state.counters.find((x) => x.id === id);
+  if (!c) return;
+  const i = Number(idx);
+  if (!(i >= 0 && i < c.history.length)) return;
+  const ts = c.history[i]?.ts;
+  if (!ts) return;
+  deleteHistoryEntryByTs(id, ts);
+}
+
+// Stable delete by record timestamp (avoids index drift during concurrent animations)
+function deleteHistoryEntryByTs(id, ts) {
+  const c = state.counters.find((x) => x.id === id);
+  if (!c) return;
+  const i = c.history.findIndex((h) => h && h.ts === ts);
+  if (i === -1) return;
+
+  let committed = false;
+  const rec = c.history[i];
+  try {
+    const sel = `#history-list li[data-ts="${CSS.escape(ts)}"]`;
+    const li = document.querySelector(sel);
+    if (li) {
+      const h = li.getBoundingClientRect().height;
+      // Lock current height so siblings can smoothly move up during collapse
+      li.style.height = h + 'px';
+      // Ensure transition styles are active before changing properties
+      li.style.transition = 'height .22s ease, margin .22s ease, padding .22s ease, opacity .18s ease, transform .18s ease, border-color .2s ease';
+      // Force reflow
+      // eslint-disable-next-line no-unused-expressions
+      li.offsetHeight;
+      li.classList.add('leaving');
+      // Keep list height stable if this is the last item
+      const listEl = el('#history-list');
+      const isLast = (c.history.length === 1);
+      if (isLast && listEl) {
+        try { listEl.style.minHeight = h + 'px'; } catch {}
+      }
+      const onEnd = (e) => {
+        if (e && e.target !== li) return;
+        if (e && e.propertyName && e.propertyName !== 'height') return;
+        li.removeEventListener('transitionend', onEnd);
+        commitDelete(listEl, isLast);
+      };
+      li.addEventListener('transitionend', onEnd);
+      const t = setTimeout(() => { if (!committed) commitDelete(listEl, isLast); }, 360);
+      // store timeout on element to cancel if needed
+      try { li._delTimer = t; } catch {}
+      return;
+    }
+  } catch {}
+
+  commitDelete();
+
+  function commitDelete(listEl, wasLast) {
+    if (committed) return; committed = true;
+    const j = c.history.findIndex((h) => h && h.ts === ts);
+    if (j === -1) { if (listEl) listEl.style.minHeight = ''; openHistory(id); return; }
+    // adjust count only when removing +delta entries; notes (0) do not affect count
+    const d = c.history[j]?.delta || 0;
+    const countChanged = d > 0;
+    if (countChanged) c.count = Math.max(0, c.count - d);
+    c.history.splice(j, 1);
+    c.updatedAt = nowISO();
+    save();
+    // Update main card view (avoid full re-render to prevent flicker)
+    updateCounterView(id, countChanged);
+    // If the deleted one was the last record, avoid full re-render to prevent flash
+    if (wasLast && listEl) {
+      try {
+        listEl.innerHTML = '';
+        const empty = document.createElement('li');
+        empty.className = 'muted fade-in-up';
+        empty.textContent = '暂无记录';
+        listEl.appendChild(empty);
+        requestAnimationFrame(() => empty.classList.add('show'));
+        // Update the current value in meta directly
+        const valEl = el('#history-meta .history-current .value');
+        if (valEl) {
+          valEl.textContent = String(c.count);
+          if (countChanged) {
+            try {
+              valEl.classList.remove('flip');
+              void valEl.offsetWidth; // reflow to restart animation
+              valEl.classList.add('flip');
+              setTimeout(() => valEl.classList.remove('flip'), 500);
+            } catch {}
+          }
+        }
+      } catch {}
+      // Do not release minHeight here to keep container height unchanged until dialog closes
+    } else {
+      openHistory(id);
+      // Animate the updated value after re-render only if count changed
+      if (countChanged) {
+        requestAnimationFrame(() => {
+          try {
+            const valEl = el('#history-meta .history-current .value');
+            if (valEl) {
+              valEl.classList.remove('flip');
+              void valEl.offsetWidth;
+              valEl.classList.add('flip');
+              setTimeout(() => valEl.classList.remove('flip'), 500);
+            }
+          } catch {}
+        });
+      }
+      if (listEl) listEl.style.minHeight = '';
+    }
+  }
 }
 
 function openRename(id, currentName) {
@@ -1238,6 +1596,17 @@ function setupUI() {
     if (noteIgnoreNextClick > 0) { noteIgnoreNextClick -= 1; return; }
     hideNotePopover();
   });
+  // Quicker close on outside tap: handle at pointerdown capture to avoid the extra click needed after blur
+  document.addEventListener('pointerdown', (e) => {
+    try {
+      const inNote = e && e.target && e.target.closest && e.target.closest('#note-popover');
+      if (inNote) return;
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now < noteSuppressCloseUntil) return;
+    } catch {}
+    if (noteIgnoreNextClick > 0) { noteIgnoreNextClick -= 1; return; }
+    hideNotePopover();
+  }, true);
   // Avoid sticky :focus styles on buttons after tap/click
   const blurActiveButton = () => {
     try {
@@ -1592,7 +1961,6 @@ function showGlobalMenu(anchorRect) {
     if (inp) inp.click();
   }));
   elp.appendChild(mk('导出 JSON', '', () => exportJSON()));
-  elp.appendChild(mk('强制刷新（更新缓存）', '', () => forceUpdateAssets()));
 
   const vw = window.innerWidth, vh = window.innerHeight;
   elp.style.left = '0px'; elp.style.top = '0px';
@@ -1615,40 +1983,4 @@ function showGlobalMenu(anchorRect) {
   currentPopoverFor = 'global';
 }
 
-// 手动强制更新：清理缓存、唤醒新 SW 并重载
-async function forceUpdateAssets() {
-  const clearCaches = async () => {
-    try {
-      if (!('caches' in window)) return;
-      const keys = await caches.keys();
-      await Promise.all(keys.map((k) => caches.delete(k)));
-    } catch {}
-  };
-  const hardReload = () => {
-    try {
-      const url = new URL(location.href);
-      url.searchParams.set('v', String(Date.now()));
-      location.replace(url.toString());
-    } catch { location.reload(); }
-  };
-  try {
-    await clearCaches();
-    if (!('serviceWorker' in navigator)) { hardReload(); return; }
-    let reloaded = false;
-    const onCtrl = () => { if (reloaded) return; reloaded = true; hardReload(); };
-    try { navigator.serviceWorker.addEventListener('controllerchange', onCtrl, { once: true }); } catch {}
-    const reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) { hardReload(); return; }
-    try { reg.active && reg.active.postMessage({ type: 'CLEAR_CACHES' }); } catch {}
-    try { reg.waiting && reg.waiting.postMessage({ type: 'SKIP_WAITING' }); } catch {}
-    try { reg.installing && reg.installing.postMessage({ type: 'SKIP_WAITING' }); } catch {}
-    try { await reg.update(); } catch {}
-    // 强化路径：若 800ms 内无控制权变化，则直接注销并硬刷新，彻底规避旧缓存
-    setTimeout(async () => {
-      if (reloaded) return;
-      try { await reg.unregister(); } catch {}
-      try { await clearCaches(); } catch {}
-      hardReload();
-    }, 800);
-  } catch { hardReload(); }
-}
+// 旧的“强制刷新（更新缓存）”已在 GitHub Pages 部署下取消暴露入口

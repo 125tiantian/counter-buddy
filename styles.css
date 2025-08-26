@@ -129,7 +129,8 @@ body::after {
 /* Constrain content width/height while keeping full-window background */
 .panel-inner {
   display: grid;
-  grid-template-rows: auto auto 1fr; /* header, toolbar, content */
+  /* header, toolbar, content(list), footer */
+  grid-template-rows: auto auto 1fr auto;
   width: 100%;
   max-width: 960px;  /* limit max width */
   height: 100%;
@@ -196,7 +197,8 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 12px 14px 12px;
+  /* Now footer is its own row; keep normal padding */
+  padding: 10px 12px 12px 12px;
   flex: 1 1 auto;
   min-height: 0;     /* let it truly flex to available height */
   /* Fill remaining space; rely on flex container instead of viewport cap */
@@ -222,10 +224,13 @@ textarea {
   grid-template-columns: 1fr auto;
   gap: 8px;
   align-items: center;
-  transition: box-shadow .2s ease, transform .08s ease, border-color .2s ease;
+  transition: box-shadow .2s ease, transform .14s ease, border-color .2s ease;
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 10%, transparent);
   position: relative; /* for drop indicators */
   cursor: default; /* show normal pointer on hover */
+  /* Reduce text flicker during FLIP by keeping a stable layer */
+  will-change: transform;
+  backface-visibility: hidden;
 }
 @media (hover: hover) {
   .card:hover { box-shadow: var(--shadow-1); border-color: color-mix(in oklab, var(--accent) 35%, var(--border)); }
@@ -287,9 +292,22 @@ button {
   /* PC: hover时点点持续跳动（与原样一致） */
   .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) infinite; }
 }
+/* Make +1 button hover pop a bit more than others */
+@media (hover: hover) {
+  .actions .btn-plus:not(:disabled):hover {
+    filter: brightness(1.08);
+    transform: translateY(-1.2px);
+    /* Stronger, colored shadow without outer halo */
+    box-shadow: 0 8px 18px color-mix(in oklab, var(--accent) 50%, transparent), 0 6px 16px rgba(0,0,0,.16);
+  }
+}
 button:not(:disabled):active { transform: translateY(1px); }
 /* Avoid icon menu button bouncing on tap */
 .btn-ellipsis:active { transform: none; }
+/* Ensure +1 press feels distinct even when hovered */
+.actions .btn-plus:not(:disabled):active {
+  transform: translateY(1px);
+}
 button.primary { background: var(--accent); border-color: var(--accent); color: white; }
 button.success { background: var(--success); border-color: var(--success); color: white; }
 button.danger { background: var(--danger); border-color: var(--danger); color: white; }
@@ -299,18 +317,12 @@ button:disabled { opacity: .6; cursor: not-allowed; filter: none; transform: non
 button.ghost { background: transparent; border-color: var(--border); }
 button.tonal { background: color-mix(in oklab, var(--accent) 14%, transparent); border-color: color-mix(in oklab, var(--accent) 35%, var(--btn-border)); color: var(--accent); }
 button.round { border-radius: 999px; }
-.actions .btn-plus { font-weight: 800; box-shadow: 0 6px 14px color-mix(in oklab, var(--accent) 35%, transparent); }
+.actions .btn-plus { font-weight: 800; box-shadow: 0 6px 14px color-mix(in oklab, var(--accent) 35%, transparent); will-change: transform, filter; transform: translateZ(0); backface-visibility: hidden; }
 .actions .btn-minus { min-width: 0; }
 
-/* Primary + button soft glow */
+/* Primary + button: remove outer glow on hover (avoid white halo) */
 .actions .btn-plus { position: relative; }
-.actions .btn-plus::after {
-  content: '';
-  position: absolute; inset: -4px; border-radius: inherit;
-  box-shadow: 0 0 24px color-mix(in oklab, var(--accent) 45%, transparent);
-  opacity: 0; transition: opacity .2s ease;
-}
-@media (hover: hover) { .actions .btn-plus:not(:disabled):hover::after { opacity: 1; } }
+/* Removed ::after glow to eliminate white halo on desktop hover */
 
 /* 三点菜单：展开时维持与 PC 悬浮一致的视觉（亮度、上浮、阴影） */
 .btn-ellipsis[aria-expanded="true"] {
@@ -335,12 +347,12 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 }
 .hidden { display: none; }
 
-.modal { border: none; background: var(--panel); color: var(--text); border-radius: 12px; width: min(520px, 92vw); }
+.modal { border: none; background: var(--panel); color: var(--text); border-radius: 12px; width: min(520px, 92vw); overflow: hidden; }
 .modal::backdrop { background: rgba(0,0,0,0.55); opacity: 0; transition: opacity .18s ease; }
 .modal[open].show::backdrop { opacity: 1; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border-top-left-radius: 12px; border-top-right-radius: 12px; position: relative; }
 .modal-header::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent)); opacity:.5; }
-.modal-body { padding: 10px 12px 16px 12px; }
+.modal-body { padding: 10px 12px 16px 12px; max-height: 65vh; overflow: auto; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 .modal-title { font-weight: 600; }
 .modal-actions {
   display: flex !important;
@@ -355,16 +367,57 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 
 #rename-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
 
-.history-list { list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow: auto; }
-.history-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed var(--divider); position: relative; }
-.history-list li .left { transition: opacity .18s ease, transform .18s ease; }
-.history-list li .right { display: flex; align-items: center; gap: 6px; transition: opacity .18s ease, transform .18s ease; }
+.history-list { list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow: auto; scrollbar-gutter: stable; }
+.history-list li { display: flex; align-items: flex-start; padding: 8px; border-bottom: 1px dashed var(--divider); position: relative; gap: 8px; }
+.history-list li .right { min-width: 0; }
+.history-list li .left { transition: opacity .18s ease, transform .18s ease; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; white-space: nowrap; flex: 0 0 auto; }
+.history-list li .left .d { font-weight: 600; }
+.history-list li .left .t { color: var(--muted); font-size: 12px; }
+.history-list li .right { flex: 1 1 auto; min-width: 0; display: block; transition: opacity .18s ease, transform .18s ease; position: relative; }
+/* Float controls to the right on the first line */
+.history-list li .right .pill,
+.history-list li .right .ghost,
+.history-list li .right .btn-icon { float: right; margin-left: 6px; }
+.history-list li .right .ghost { height: 28px; padding: 0 8px; display: inline-flex; align-items: center; }
+/* Let note flow next to floats on line 1, and below on following lines */
+.history-list li .right .history-note { display: block; margin-left: 0; white-space: normal; overflow: visible; }
+/* removed experimental top/full split */
+/* Clear floats after content to contain height */
+.history-list li .right::after { content: ''; display: table; clear: both; }
 .history-list li.editing .left { opacity: 0; transform: translateX(-6px); }
 /* When editing, remove left time from layout so editor can take full width */
 .history-list li.editing .left { position: absolute; left: 8px; pointer-events: none; }
-.pill { font-size: 12px; padding: 2px 6px; border-radius: 999px; }
-.pill.add { background: rgba(69,194,107,0.2); color: var(--success); }
+/* Deleting: graceful collapse + fade */
+.history-list li { will-change: transform, opacity; }
+.history-list li.leaving {
+  overflow: hidden;
+  opacity: 0;
+  transform: translateX(-6px);
+  height: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-bottom-color: transparent;
+  transition: height .22s ease, margin .22s ease, padding .22s ease, opacity .18s ease, transform .18s ease, border-color .2s ease;
+}
+.history-list li.leaving * { pointer-events: none; }
+
+/* Simple fade-in helper (used for empty state) */
+.fade-in { opacity: 0; transition: opacity .18s ease; }
+.fade-in.show { opacity: 1; }
+/* Fade + slight upward slide (for empty state nicer entrance) */
+.fade-in-up { opacity: 0; transform: translateY(6px); transition: opacity .2s ease, transform .22s cubic-bezier(.2,.7,.2,1); }
+.fade-in-up.show { opacity: 1; transform: translateY(0); }
+
+/* Animate current value in history meta on change */
+#history-meta .history-current .value.flip { animation: badge-flip .38s cubic-bezier(.2,.7,.2,1); transform-origin: 50% 60%; will-change: transform; }
+.pill { display: inline-flex; align-items: center; justify-content: center; height: 28px; font-size: 13px; font-weight: 700; padding: 0 10px; border-radius: 999px; line-height: 1; }
+/* +1 badge follows current theme accent */
+.pill.add { background: color-mix(in oklab, var(--accent) 22%, transparent); color: var(--accent); }
 .pill.sub { background: rgba(245,165,36,0.2); color: var(--warning); }
+/* note/record badge uses theme accent too */
+.pill.note { background: color-mix(in oklab, var(--accent) 18%, transparent); color: var(--accent); }
 
 /* History header meta: name + current value, clearer separation */
 #history-meta {
@@ -428,27 +481,39 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 /* no per-item hide animation on collapse to avoid flicker */
 .popover .item.danger { color: #fff; background: var(--danger); border-top: 1px solid rgba(0,0,0,0.1); }
 @media (hover: hover) {
-  .popover .item:hover { background: color-mix(in oklab, var(--accent) 14%, transparent); }
-  .popover .item.danger:hover { filter: brightness(0.95); }
+  /* Only non-danger items get the accent hover */
+  .popover .item:not(.danger):hover { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+  /* Danger item: clearly darker on hover for stronger affordance */
+  .popover .item.danger:hover { background: color-mix(in oklab, var(--danger) 82%, black); }
 }
 
 /* Quick note content inside popover */
 .note-quick { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 6px; align-items: center; padding: 10px 12px; min-width: 260px; }
-.note-quick .note-input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
+.note-quick .note-input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); transition: border-color .18s ease, border-width .12s ease, padding .12s ease; }
 .note-quick > button { flex: 0 0 auto; white-space: nowrap; }
 .note-quick button { padding: 6px 10px; }
 
 /* Icon-like compact buttons */
 .btn-icon { width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center; padding: 0; font-weight: 800; line-height: 1; }
+.btn-icon-sm { width: 28px; height: 28px; }
+.btn-icon-sm svg { width: 14px; height: 14px; }
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 
 /* Focus ring */
 button:focus { outline: none; }
 button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); outline-offset: 2px; }
+.note-quick .note-input:focus,
+.note-quick .note-input:focus-visible {
+  outline: none !important; /* avoid double-outline on quick note input */
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-width: 2px;
+  padding: 5px 7px; /* keep overall size stable when border grows */
+}
 .btn-ellipsis .dots { display: inline-flex; gap: 3px; align-items: center; justify-content: center; }
 .btn-ellipsis .dots i { width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: .85; display: inline-block; }
 @media (hover: hover) {
-  .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) 1; }
+  .btn-ellipsis:not(:disabled):hover .dots i { animation: dots-roll .9s cubic-bezier(.2,.7,.2,1) infinite; }
   .btn-ellipsis:not(:disabled):hover .dots i:nth-child(2) { animation-delay: .08s; }
   .btn-ellipsis:not(:disabled):hover .dots i:nth-child(3) { animation-delay: .16s; }
 }
@@ -466,14 +531,12 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
   transform: none !important;
   box-shadow: none !important;
 }
-.no-hover .actions .btn-plus:not(:disabled):hover::after { opacity: 0 !important; }
 /* 但在按压反馈期间，允许覆盖上面的禁用规则 */
 .no-hover button.tap-flash {
   filter: brightness(1.06) !important;
   transform: translateY(-1px) !important;
   box-shadow: 0 6px 14px rgba(0,0,0,.18) !important;
 }
-.no-hover .actions .btn-plus.tap-flash::after { opacity: 1 !important; }
 /* 三点菜单在触屏上展开时，即便出现 :hover 粘滞，也强制展示高亮视觉 */
 .no-hover .btn-ellipsis[aria-expanded="true"] {
   filter: brightness(1.04) !important;
@@ -493,9 +556,9 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 /* 明确的按压阴影：通过 JS 临时加类，避免 :hover 粘住问题 */
 /* 触屏“按压效果”：与 hover 视觉一致，但只在按压期间短暂出现 */
 button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.18); }
-.actions .btn-plus.tap-flash::after { opacity: 1; }
 
 .history-note { margin-left: 8px; font-size: 12px; color: var(--muted); }
+.history-note { word-break: break-word; overflow-wrap: anywhere; }
 .note-edit { display: flex !important; flex-direction: row !important; gap: 6px; align-items: center; flex-wrap: nowrap !important; min-width: 0; }
 .note-edit > button { flex: 0 0 auto; white-space: nowrap; }
 .note-edit input { flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
@@ -536,23 +599,38 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 }
 
 /* Dragging styles & drop indicators */
-.card.dragging { opacity: .75; transform: scale(.996); box-shadow: 0 8px 22px rgba(0,0,0,.28); }
+.card.dragging { cursor: grabbing; opacity: .98; transform: translateY(-2px) scale(1.01); box-shadow: 0 14px 34px rgba(0,0,0,.32); }
 .card.drop-top::before,
 .card.drop-bottom::after {
   content: '';
-  position: absolute; left: 10px; right: 10px; height: 3px;
+  position: absolute; left: 10px; right: 10px; height: 4px;
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  border-radius: 2px; opacity: .9;
+  border-radius: 3px; opacity: .95;
 }
 .card.drop-top::before { top: -2px; }
 .card.drop-bottom::after { bottom: -2px; }
-.card.dragging { cursor: grabbing; opacity: .9; transform: scale(.998); box-shadow: 0 10px 26px rgba(0,0,0,.28); }
 .card.drag-origin { opacity: .24; }
 
 /* Custom drag image (used by setDragImage, kept off-screen) */
 .drag-image {
-  border-radius: 10px; box-shadow: var(--shadow-2);
-  transform: none; opacity: 1; background: var(--surface);
+  border-radius: 10px; box-shadow: var(--shadow-2), 0 18px 40px rgba(0,0,0,.35);
+  transform: rotate(-0.6deg) scale(1.01);
+  opacity: .96; background: var(--surface);
+}
+
+/* Global cursor while dragging for consistent feel */
+.dragging-global, .dragging-global * { cursor: grabbing !important; }
+
+/* Placeholder spacer for pointer-based DnD */
+.card-placeholder {
+  border-radius: 10px;
+  border: 2px dashed color-mix(in oklab, var(--accent) 85%, transparent);
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  transition: background .12s ease, opacity .12s ease;
+  /* Always occupy full width and fixed height in flex column */
+  width: 100%;
+  box-sizing: border-box;
+  flex: 0 0 auto;
 }
 
 /* Dialog enter/exit animation */
@@ -570,29 +648,42 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 /* Smooth transition when keyboard avoidance shifts elements */
 .kb-avoid { transition: transform .22s ease, top .22s ease; }
 
-/* App footer credit */
+/* App footer credit: occupy its own grid row, centered */
 .app-footer {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  transform: translateX(-50%);
   font-size: 10px;
   color: var(--muted);
   letter-spacing: .2px;
   opacity: .6;
   user-select: none;
-  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  pointer-events: auto;
+  justify-self: center;
+  /* tighter vertical space; sit closer to bottom */
+  padding: 2px 0 4px 0;
 }
 .app-footer .sep { opacity: .6; }
-.app-footer a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted transparent; }
+.app-footer a, .app-footer .footer-link { color: var(--muted); text-decoration: none; border-bottom: 1px dotted transparent; }
+/* Reset button look so footer links visually stay as plain text links */
+.app-footer .footer-link {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  font: inherit;
+  line-height: inherit;
+}
 @media (hover: hover) {
-  .app-footer a:hover { color: var(--text); border-bottom-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .app-footer a:hover, .app-footer .footer-link:hover { color: var(--text); border-bottom-color: color-mix(in oklab, var(--accent) 40%, transparent); }
 }
 @media (max-width: 420px) {
   .app-footer { gap: 6px; }
   .app-footer .local-note { display: none; }
+}
+
+/* Keep layout consistent on small screens; note remains on first line with ellipsis */
+@media (max-width: 560px) {
+  .history-list li { align-items: flex-start; }
 }
