@@ -242,6 +242,26 @@ textarea {
 .card.leaving { overflow: hidden; opacity: 0; transform: translateY(8px) scale(.98); transition: height .22s ease, margin .22s ease, padding .22s ease, opacity .18s ease, transform .18s ease, border-color .2s ease, box-shadow .2s ease; }
 .card.leaving * { pointer-events: none; }
 
+/* 添加“记录”后的短暂提示（不改变计数，仅用于反馈） */
+.record-indicator {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.18);
+  opacity: 0;
+  transform: translateY(-3px) scale(.96);
+  transition: opacity .26s ease, transform .26s cubic-bezier(.2,.7,.2,1);
+  pointer-events: none;
+}
+.actions .record-indicator { margin-right: 6px; }
+.record-indicator.show { opacity: 1; transform: translateY(0) scale(1); }
+.record-indicator.hide { opacity: 0; transform: translateY(-3px) scale(.98); }
+
 .name-row { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
 .badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -353,6 +373,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border-top-left-radius: 12px; border-top-right-radius: 12px; position: relative; }
 .modal-header::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent)); opacity:.5; }
 .modal-body { padding: 10px 12px 16px 12px; max-height: 65vh; overflow: auto; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+.modal-body hr.section-sep { border: 0; border-top: 1px solid var(--divider); margin: 8px 0 10px 0; }
 .modal-title { font-weight: 600; }
 .modal-actions {
   display: flex !important;
@@ -360,12 +381,111 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
   align-items: center !important;
   justify-content: flex-end !important;
   margin-top: 10px;
-  flex-wrap: nowrap !important;
+  /* 允许在窄屏换行，避免按钮被挤掉看不见 */
+  flex-wrap: wrap !important;
   gap: 8px;
 }
 .modal-actions > * { flex: 0 0 auto; white-space: nowrap; }
 
-#rename-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); }
+/* 窄屏（手机）下：动作按钮改为每行一枚，避免挤压导致只露出半个 */
+@media (max-width: 480px) {
+  .modal-actions { justify-content: stretch !important; }
+  .modal-actions > * { flex: 1 1 100% !important; }
+}
+
+/* 表单行：标签 + 控件（用于“自动同步”开关） */
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.field-label { color: var(--text); font-size: 14px; }
+
+/* 开关样式（更友好的 checkbox） */
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer; }
+.switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.switch .slider { position: absolute; inset: 0; background: var(--btn); border: 1px solid var(--btn-border); border-radius: 999px; transition: background .18s ease, border-color .18s ease; cursor: pointer; }
+.switch .slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; border-radius: 50%; background: var(--text); transition: transform .18s ease, background .18s ease; }
+.switch input:checked + .slider { background: color-mix(in oklab, var(--accent) 35%, transparent); border-color: color-mix(in oklab, var(--accent) 60%, var(--btn-border)); }
+.switch input:checked + .slider::before { transform: translateX(20px); background: #fff; }
+
+/* 高级设置（折叠） */
+details.advanced { margin-top: 8px; }
+details.advanced > summary { cursor: pointer; user-select: none; color: var(--muted); padding: 6px 0; list-style: none; position: relative; padding-left: 18px; }
+details.advanced[open] > summary { color: var(--text); }
+details.advanced > summary::-webkit-details-marker { display: none; }
+details.advanced > summary::before { content: '\25B8'; position: absolute; left: 0; top: 6px; font-size: 12px; opacity: .8; transition: transform .18s ease; }
+details.advanced[open] > summary::before { transform: rotate(90deg); }
+details.advanced .modal-actions { animation: adv-reveal .22s cubic-bezier(.2,.7,.2,1); }
+@keyframes adv-reveal { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (max-width: 560px) {
+  details.advanced .modal-actions { flex-direction: column; align-items: stretch !important; }
+  details.advanced .modal-actions > * { width: 100%; flex: 1 1 100% !important; }
+}
+
+/* 输入框 placeholder 统一样式（更柔和） */
+#sync-dialog input::placeholder,
+#rename-input::placeholder,
+.note-edit input::placeholder,
+.note-quick .note-input::placeholder { color: color-mix(in oklab, var(--muted) 88%, transparent); opacity: .9; }
+
+/* 高级设置：使用主题色的 plus/minus 指示（去掉三角） */
+details.advanced > summary { padding-left: 22px; }
+/* 横杆（始终显示） */
+details.advanced > summary::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 12px;
+  height: 2px;
+  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent));
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+/* 竖杆（关闭时可见，展开后隐藏 -> 由加号变减号） */
+details.advanced > summary::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 2px;
+  height: 12px;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent));
+  border-radius: 2px;
+  transform: translateY(-50%);
+  transition: transform .22s ease, opacity .2s ease;
+}
+details.advanced[open] > summary::after { transform: translateY(-50%) scaleY(0); opacity: 0; }
+/* 关闭旧的仅首次展开时的动画，避免不连贯 */
+details.advanced .modal-actions { animation: none !important; }
+/* 使用 grid-template-rows 技巧实现整体高度的平滑展开/收起 */
+details.advanced .adv-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .32s cubic-bezier(.2,.7,.2,1), height .32s cubic-bezier(.2,.7,.2,1); }
+details.advanced[open] .adv-content { grid-template-rows: 1fr; }
+details.advanced .adv-content > * { overflow: hidden; }
+/* 避免浏览器滚动锚定导致展开时的“跳动感” */
+details.advanced .adv-content { overflow-anchor: none; }
+/* 内部内容淡入 + 轻微上移，增强连贯感 */
+details.advanced .adv-content .modal-actions { opacity: 0; transform: translateY(-4px); transition: opacity .24s ease, transform .32s cubic-bezier(.2,.7,.2,1); }
+details.advanced[open] .adv-content .modal-actions { opacity: 1; transform: none; }
+
+/* 兼容 JS 控制高度的补间动画，确保收起时同样平滑 */
+/* 默认收起更快一些；展开速度稍慢，在 JS 中单独设置 height 的过渡时长以匹配 */
+details.advanced .adv-content { transition: grid-template-rows .24s cubic-bezier(.2,.7,.2,1), height .24s cubic-bezier(.2,.7,.2,1); }
+
+/* 云同步状态图标 */
+#cloud-indicator { color: var(--muted); position: relative; }
+#cloud-indicator svg { transform-origin: 50% 50%; transform-box: view-box; }
+#cloud-indicator svg .cloud-stroke { fill: transparent; stroke: currentColor; stroke-width: 2px; stroke-linecap: round; stroke-linejoin: round; opacity: 1; transition: opacity .22s ease, stroke .22s ease, fill .22s ease; }
+#cloud-indicator svg .cloud-fill { fill: currentColor; opacity: 0; transition: opacity .22s ease; }
+#cloud-indicator[data-state="syncing"] { color: var(--accent); }
+#cloud-indicator[data-state="ok"] { color: var(--accent); }
+#cloud-indicator[data-state="error"] { color: var(--danger); }
+#cloud-indicator[data-state="offline"] { color: var(--muted); opacity: .8; }
+#cloud-indicator[data-state="syncing"] svg,
+#cloud-indicator[data-spinout="1"] svg { animation: spin 1.6s linear infinite; }
+#cloud-indicator[data-state="ok"] svg .cloud-fill { opacity: 1; }
+#cloud-indicator[data-state="ok"] svg .cloud-stroke { opacity: 0; }
+#cloud-indicator[data-state="offline"]::after { content: ''; position: absolute; width: 16px; height: 2px; background: currentColor; transform: rotate(45deg); top: 50%; left: 50%; margin-left: -8px; margin-top: -1px; border-radius: 1px; opacity: .9; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+#rename-input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); -webkit-appearance: none; appearance: none; background-clip: padding-box; font-size: 16px; }
 
 .history-list { list-style: none; padding: 0; margin: 0; max-height: 50vh; overflow: auto; scrollbar-gutter: stable; }
 .history-list li { display: flex; align-items: flex-start; padding: 8px; border-bottom: 1px dashed var(--divider); position: relative; gap: 8px; }
@@ -489,7 +609,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 
 /* Quick note content inside popover */
 .note-quick { display: flex !important; flex-direction: row !important; flex-wrap: nowrap !important; gap: 6px; align-items: center; padding: 10px 12px; min-width: 260px; }
-.note-quick .note-input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); transition: border-color .18s ease, border-width .12s ease, padding .12s ease; }
+.note-quick .note-input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--input-border); background: var(--input-bg); color: var(--text); transition: border-color .18s ease, border-width .12s ease, padding .12s ease; -webkit-appearance: none; appearance: none; background-clip: padding-box; font-size: 16px; }
 .note-quick > button { flex: 0 0 auto; white-space: nowrap; }
 .note-quick button { padding: 6px 10px; }
 
@@ -499,16 +619,68 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .btn-icon-sm svg { width: 14px; height: 14px; }
 .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 
+/* Tip-style popover (compact, non-interactive) */
+.popover.tip { min-width: auto; max-width: 240px; padding: 4px 0; }
+.popover.tip::before { right: auto; left: 50%; transform: translateX(-50%) rotate(45deg); }
+.popover.tip .item { cursor: default; padding: 6px 10px; opacity: 1; transform: none; animation: none; font-size: 12px; line-height: 1.3; }
+.popover.tip .item:hover { background: transparent; }
+
 /* Focus ring */
 button:focus { outline: none; }
 button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); outline-offset: 2px; }
+/* 备注输入框：获得焦点时取消外轮廓，改为加粗边框，避免双层描边 */
 .note-quick .note-input:focus,
 .note-quick .note-input:focus-visible {
-  outline: none !important; /* avoid double-outline on quick note input */
+  outline: none !important; /* 避免双重外轮廓 */
   box-shadow: none;
   border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
   border-width: 2px;
-  padding: 5px 7px; /* keep overall size stable when border grows */
+  padding: 5px 7px; /* 边框变粗时缩小内边距以保持尺寸稳定 */
+}
+
+/* 同步设置输入框：与“备注”输入框一致的聚焦样式（无双层描边） */
+#sync-dialog input[type="text"],
+#sync-dialog input[type="password"] {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text);
+  -webkit-appearance: none;
+  appearance: none;
+  background-clip: padding-box;
+  font-size: 16px; /* iOS: 避免聚焦时页面缩放 */
+}
+#sync-dialog input[type="text"]:focus,
+#sync-dialog input[type="text"]:focus-visible,
+#sync-dialog input[type="password"]:focus,
+#sync-dialog input[type="password"]:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-width: 2px;
+  padding: 5px 7px; /* keep size stable when border grows */
+}
+
+/* 重命名输入框：统一聚焦样式，移除外轮廓，改为加粗边框 */
+#rename-input:focus,
+#rename-input:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-width: 2px;
+  padding: 7px 9px; /* 原 8px 10px，边框变粗后保持整体尺寸 */
+}
+
+/* 历史编辑输入框：统一聚焦样式 */
+.note-edit input:focus,
+.note-edit input:focus-visible {
+  outline: none !important;
+  box-shadow: none;
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-width: 2px;
+  padding: 5px 7px; /* 原 6px 8px，保持尺寸 */
 }
 .btn-ellipsis .dots { display: inline-flex; gap: 3px; align-items: center; justify-content: center; }
 .btn-ellipsis .dots i { width: 6px; height: 6px; border-radius: 999px; background: currentColor; opacity: .85; display: inline-block; }
@@ -687,3 +859,30 @@ button.tap-flash { filter: brightness(1.06); transform: translateY(-1px); box-sh
 @media (max-width: 560px) {
   .history-list li { align-items: flex-start; }
 }
+
+/* 降低动态效果时：简化高级设置相关的过渡 */
+@media (prefers-reduced-motion: reduce) {
+  details.advanced .adv-content,
+  details.advanced .adv-content .modal-actions,
+  details.advanced > summary::before {
+    transition: none !important;
+  }
+}
+
+/* 同步设置：输入框右侧操作按钮（用于 API Key 显示/隐藏） */
+#sync-dialog .input-row { display: flex; align-items: center; gap: 6px; }
+#sync-dialog .input-row input { flex: 1 1 auto; min-width: 0; }
+#sync-dialog .input-row button { flex: 0 0 auto; white-space: nowrap; height: 100%; padding: 6px 10px; }
+/* 紧凑化同步设置的状态区与按钮区间距 */
+#sync-dialog #sync-status { margin: 2px 0 6px 0 !important; min-height: 1em; }
+#sync-dialog .modal-actions { margin-top: 6px; }
+
+/* 自动同步开关：hover/聚焦反馈（仅桌面 hover 环境启用） */
+@media (hover: hover) {
+  .switch:hover .slider { background: color-mix(in oklab, var(--accent) 12%, var(--btn)); border-color: color-mix(in oklab, var(--accent) 28%, var(--btn-border)); }
+  .switch:hover input:checked + .slider { background: color-mix(in oklab, var(--accent) 45%, transparent); border-color: color-mix(in oklab, var(--accent) 70%, var(--btn-border)); }
+  .switch:hover input:not(:checked) + .slider::before { transform: translateX(0) scale(1.06); }
+  .switch:hover input:checked + .slider::before { transform: translateX(20px) scale(1.06); }
+}
+/* 键盘聚焦：统一为输入框风格（仅改变边框颜色，不加外层描边） */
+.switch:focus-within .slider { outline: none; box-shadow: none; border-color: color-mix(in oklab, var(--accent) 42%, var(--btn-border)); }

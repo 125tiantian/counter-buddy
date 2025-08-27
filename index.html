@@ -22,6 +22,14 @@
             <div class="title">计数伴侣</div>
             <div class="header-actions">
               <button id="btn-clear" class="danger" aria-label="清空所有数据">清空</button>
+              <button id="cloud-indicator" class="btn-icon ghost round" aria-label="云同步状态" data-state="idle">
+                <!-- 轴对称云图标（重新居中，旋转更稳定） -->
+                <svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <!-- 对称云形：围绕 x=12 的两段弧线，底边圆角 -->
+                  <path class="cloud-fill" d="M5 17h14a3.5 3.5 0 0 0 0-7h0A5.8 5.8 0 0 0 12 6.2A5.8 5.8 0 0 0 5 10H5a4 4 0 0 0 0 7Z"/>
+                  <path class="cloud-stroke" d="M5 17h14a3.5 3.5 0 0 0 0-7h0A5.8 5.8 0 0 0 12 6.2A5.8 5.8 0 0 0 5 10H5a4 4 0 0 0 0 7Z"/>
+                </svg>
+              </button>
               <button id="btn-global-menu" class="btn-ellipsis ghost round btn-icon" aria-label="更多">
                 <span class="dots"><i></i><i></i><i></i></span>
               </button>
@@ -165,8 +173,60 @@
         <button id="privacy-close">关闭</button>
       </div>
       <div class="modal-body">
-        <p>本应用的计数数据仅存储在您的浏览器本地（localStorage），不会上传到服务器。</p>
-        <p>您可随时使用右上角“清空”按钮删除所有本地数据。</p>
+        <p>本应用默认将计数数据仅存储在您的浏览器本地（localStorage），不会上传到我们的服务器。</p>
+        <p>如启用云同步（JSONBin），数据会由您的浏览器直接与 JSONBin API 通信；<strong>Bin ID</strong> 与 <strong>API Key</strong> 仅保存在本机的 localStorage 中，用于访问您自己的 Bin。我们不会收集或存储您的数据或密钥。</p>
+        <ul>
+          <li>可随时在“同步设置 → 高级设置”中点击“解除绑定”，仅清除本机保存的 Bin ID 与 API Key，不会删除 JSONBin 上的数据。</li>
+          <li>离线时应用仍可使用；网络恢复后会根据设置自动重试同步。</li>
+          <li>您可随时使用右上角“清空”按钮删除所有本地数据。</li>
+        </ul>
+      </div>
+    </dialog>
+
+    <!-- Sync settings dialog -->
+    <dialog id="sync-dialog" class="modal">
+      <div class="modal-header">
+        <div class="modal-title">同步设置</div>
+        <button id="sync-close">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:8px; line-height:1.6;">
+          使用 JSONBin 进行云同步。填写 Bin ID 与 API Key 后保存。提示：API Key 相当于写入权限的钥匙，请勿外泄。
+        </div>
+        <hr class="section-sep" />
+        <div class="field-row">
+          <div class="field-label">自动同步</div>
+          <label class="switch">
+            <input id="sync-auto" type="checkbox" />
+            <span class="slider" aria-hidden="true"></span>
+          </label>
+        </div>
+        <label style="display:block; margin-bottom:8px;">
+          Bin ID
+          <input id="sync-binid" type="text" placeholder="例如：660e..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" name="sync-binid" />
+        </label>
+        <label style="display:block; margin-bottom:6px;">
+          API Key
+          <div class="input-row">
+            <input id="sync-apikey" type="password" placeholder="以 X-Master-Key 使用" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" name="sync-apikey" />
+            <button id="sync-apikey-toggle" class="ghost" type="button" aria-pressed="false" aria-controls="sync-apikey" title="显示/隐藏 API Key">显示</button>
+          </div>
+        </label>
+        <div id="sync-status" class="muted"></div>
+        <div class="modal-actions">
+          <button id="sync-save" class="primary">保存</button>
+        </div>
+        <details class="advanced">
+          <summary>高级设置</summary>
+          <div class="adv-content">
+            <div class="modal-actions">
+            <button id="sync-pull" class="danger">仅拉取（覆盖本地）</button>
+            <button id="sync-upload" class="tonal">仅上传（覆盖云端）</button>
+            <button id="sync-test" class="tonal">测试连接</button>
+            <button id="sync-unlink" class="ghost">解除绑定</button>
+            </div>
+          </div>
+        </details>
       </div>
     </dialog>
 
@@ -183,9 +243,39 @@
           <li>点击 <span class="kbd">+1</span> 增加当前计数。</li>
           <li>长按 <span class="kbd">+1</span>，或按住 <span class="kbd">Shift</span> 再点 <span class="kbd">+1</span>，可为这次 +1 添加备注。</li>
           <li>点击 <span class="kbd">记</span>（快速记录）只添加一条“记录”备注，不改变计数。</li>
+          <li>右上角云图标：点击手动进行云同步；悬停（PC）或长按（触屏）查看同步状态。</li>
+          <li>首次使用云同步：在“同步设置”里填入 <em>Bin ID</em> 与 <em>X-Master-Key</em> 后保存（见下文指南）。</li>
         </ul>
 
-        <p><strong>“记”条目说明</strong></p>
+        <p><strong>云同步（JSONBin）</strong></p>
+        <ul>
+          <li><strong>方法介绍</strong>：
+            <ol>
+              <li>打开 <a href="https://jsonbin.io/" target="_blank" rel="noopener noreferrer">jsonbin.io</a> 注册并登录。</li>
+              <li>左侧进入 <em>Bins</em>，点击 <em>Create a Bin</em>。</li>
+              <li>在输入框粘贴以下默认 JSON（可直接复制）：
+                <pre style="background: var(--surface); border: 1px solid var(--input-border); padding: 8px; border-radius: 8px; white-space: pre; overflow: auto;">{
+  "counters": [],
+  "ui": { "panel": { "x": null, "y": null, "w": null, "h": null }, "theme": "pink" }
+}</pre>
+              </li>
+              <li>点击 <em>Save Bin</em> 保存。</li>
+              <li>在左侧复制该 Bin 的 <strong>Bin ID</strong>。</li>
+              <li>左侧进入 <em>API Keys</em>，复制 <strong>X-Master-Key</strong>。</li>
+              <li>回到应用“同步设置”，分别粘贴 <em>Bin ID</em> 与 <em>X-Master-Key</em>，保存即可。</li>
+            </ol>
+          </li>
+          <li><strong>功能介绍</strong>：点击右上角云图标可手动“合并同步”（读取云端 → 合并 → 条件写回）；可在设置中开启“自动同步”。</li>
+          <li><strong>多设备同步</strong>：在其它设备打开本应用，填入相同的 <em>Bin ID</em> 与 <em>X-Master-Key</em> 并保存，即可合并并保持同步。</li>
+          <li><strong>按钮说明</strong>：
+            <ul>
+              <li><strong>云图标</strong>：点击手动同步；悬停/长按查看状态（同步中旋转、成功实心、失败红色、离线带斜杠）。</li>
+              <li><strong>同步设置</strong>：<em>自动同步</em> 开关、<em>保存</em>；<em>高级设置</em> 中含 <em>仅拉取（覆盖本地）</em>、<em>仅上传（覆盖云端）</em>、<em>测试连接</em>、<em>解除绑定</em>；<em>显示/隐藏 API Key</em> 用于临时查看密钥。</li>
+            </ul>
+          </li>
+        </ul>
+
+        <p><strong>记功能说明</strong></p>
         <ul>
           <li><strong>用途</strong>：记录一次事件/原因/里程碑，不计入总数。</li>
           <li><strong>显示</strong>：在历史里以“记录”徽章呈现，可添加/编辑备注。</li>
