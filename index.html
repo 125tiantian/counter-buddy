@@ -106,6 +106,7 @@
               <input id="opacity" type="range" min="70" max="100" value="100" />
             </label>
             <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+              <button id="btn-archived" class="tonal" aria-label="查看归档">查看归档</button>
               <button id="theme-toggle" class="tonal" aria-label="切换主题">主题</button>
             </div>
           </div>
@@ -162,6 +163,19 @@
         <div class="modal-actions">
           <button id="confirm-cancel">取消</button>
           <button id="confirm-ok" class="danger">确定</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Info modal (app-style alert) -->
+    <dialog id="info-dialog" class="modal">
+      <div class="modal-header">
+        <div id="info-title" class="modal-title">提示</div>
+      </div>
+      <div class="modal-body">
+        <div id="info-text" class="confirm-text"></div>
+        <div class="modal-actions">
+          <button id="info-ok" class="primary">知道了</button>
         </div>
       </div>
     </dialog>

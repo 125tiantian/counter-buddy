@@ -21,6 +21,8 @@ let state = {
   ui: {
     panel: { x: null, y: null, w: null, h: null },
     theme: 'pink',
+    // 本地视图偏好：是否查看“已归档”
+    showArchived: false,
   }
 };
 let lastBumpId = null;
@@ -80,11 +82,20 @@ function setCloudIndicator(state = 'idle', tip = '') {
         const m = cs.transform || 'none';
         let angle = 0;
         if (m && m !== 'none') {
-          const vals = m.match(/matrix\(([^)]+)\)/);
-          if (vals && vals[1]) {
-            const p = vals[1].split(',').map(Number);
+          // 支持 matrix(...) 与 matrix3d(...)
+          const m2d = m.match(/matrix\(([^)]+)\)/);
+          const m3d = m.match(/matrix3d\(([^)]+)\)/);
+          if (m2d && m2d[1]) {
+            const p = m2d[1].split(',').map(Number);
             const a = p[0], b = p[1];
             angle = Math.atan2(b, a);
+          } else if (m3d && m3d[1]) {
+            const p = m3d[1].split(',').map(Number);
+            const a = p[0];      // m11
+            const b = p[1];      // m12
+            angle = Math.atan2(b, a);
+          } else {
+            angle = 0;
           }
         }
         // 目标角度：补到下一整圈（避免 360° 与 0° 等价导致 transition 不触发，减去一个微小量）
@@ -92,26 +103,44 @@ function setCloudIndicator(state = 'idle', tip = '') {
         const rem = ((angle % twoPi) + twoPi) % twoPi;
         const EPS = 0.02; // ~1.1°
         const target = angle - rem + (twoPi - EPS);
-        // 停止 CSS 无限旋转，改用过渡
-        svg.style.animation = 'none';
-        svg.style.transform = `rotate(${angle}rad)`;
-        // 下一帧启动减速过渡
-        requestAnimationFrame(() => {
-          svg.style.transition = 'transform .8s cubic-bezier(.05,.6,.1,1)';
-          svg.style.transform = `rotate(${target}rad)`;
-          let done = false;
-          const finalize = () => {
-            if (done) return; done = true;
-            try { svg.style.transition = ''; svg.style.transform = ''; svg.style.animation = ''; } catch {}
-            btn.setAttribute('data-state', state);
-            delete btn.dataset.spinoutRunning;
-          };
-          const onDone = () => { svg.removeEventListener('transitionend', onDone); finalize(); };
-          svg.addEventListener('transitionend', onDone, { once: true });
-          // 兜底：若某些环境下 transitionend 未触发，定时完成
-          setTimeout(finalize, 900);
-        });
-        return; // 直接返回，等过渡回调里再设置目标态
+        // 若 angle 与 target 有效，使用过渡；否则走 CSS 回退
+        if (isFinite(angle) && isFinite(target)) {
+          // 停止 CSS 无限旋转，改用过渡
+          svg.style.animation = 'none';
+          svg.style.transform = `rotate(${angle}rad)`;
+          // 下一帧启动减速过渡
+          requestAnimationFrame(() => {
+            svg.style.transition = 'transform .8s cubic-bezier(.05,.6,.1,1)';
+            svg.style.transform = `rotate(${target}rad)`;
+            let done = false;
+            const finalize = () => {
+              if (done) return; done = true;
+              try { svg.style.transition = ''; svg.style.transform = ''; svg.style.animation = ''; } catch {}
+              btn.setAttribute('data-state', state);
+              delete btn.dataset.spinoutRunning;
+            };
+            const onDone = () => { svg.removeEventListener('transitionend', onDone); finalize(); };
+            svg.addEventListener('transitionend', onDone, { once: true });
+            // 兜底：若某些环境下 transitionend 未触发，定时完成
+            setTimeout(finalize, 900);
+          });
+          return; // 直接返回，等过渡回调里再设置目标态
+        } else {
+          // 回退：用 CSS 一次性减速动画（不依赖读取当前角度）
+          try {
+            btn.setAttribute('data-spinout', '1');
+            const onEnd = () => {
+              svg.removeEventListener('animationend', onEnd);
+              try { btn.removeAttribute('data-spinout'); } catch {}
+              btn.setAttribute('data-state', state);
+              delete btn.dataset.spinoutRunning;
+            };
+            svg.addEventListener('animationend', onEnd, { once: true });
+            // 兜底：
+            setTimeout(onEnd, 900);
+            return;
+          } catch {}
+        }
       } catch {
         // 回退：若异常，直接切换
         btn.setAttribute('data-state', state);
@@ -191,6 +220,8 @@ async function pushToJsonBin() {
       const meta = loadSyncMeta();
       if (meta && meta.etag) headers['If-Match'] = meta.etag;
     } catch {}
+    // 确保 order 连续化
+    try { state.counters.forEach((c, i) => { if (c) c.order = i; }); } catch {}
     const res = await fetch(url, {
       method: 'PUT',
       headers,
@@ -266,7 +297,11 @@ async function pullFromJsonBin() {
       } else {
         arr.forEach((c, i) => { try { c.order = i; } catch {} });
       }
+      // 标准化缺失字段（如 archived）
+      arr.forEach((c) => { if (c && typeof c.archived !== 'boolean') c.archived = false; });
       state = { ...obj, counters: arr };
+      // 应用远端主题（覆盖拉取场景应该反映 UI 偏好）
+      try { if (state && state.ui && state.ui.theme) applyTheme(state.ui.theme); } catch {}
     } catch { state = obj; }
     save();
     render();
@@ -303,7 +338,7 @@ function normalizeStateLike(obj) {
   return { counters: arr.slice(), ui: obj.ui ? { ...obj.ui } : undefined, tombstones: tombs, historyTombstones: hTombs };
 }
 
-function mergeStates(local, remote) {
+function mergeStates(local, remote, opts = {}) {
   const l = normalizeStateLike(local) || { counters: [], ui: {} };
   const r = normalizeStateLike(remote) || { counters: [], ui: {} };
   // 合并 tombstones：对同一 id 取较新的 deletedAt
@@ -350,6 +385,7 @@ function mergeStates(local, remote) {
       }
       const newCount = outHist.reduce((s, h) => s + (Number(h.delta) > 0 ? Number(h.delta) : 0), 0);
       const copy = { ...c, history: outHist, count: newCount };
+      if (typeof copy.archived !== 'boolean') copy.archived = !!c.archived;
       return copy;
     } catch { return { ...c }; }
   };
@@ -400,6 +436,7 @@ function mergeStates(local, remote) {
       updatedAt: (lt >= rt ? lc.updatedAt : rc.updatedAt) || new Date().toISOString(),
       // 同步排列顺序：若双方存在，取基准侧；否则取另一侧；最后统一整理
       order: (Number.isFinite(base.order) ? base.order : (Number.isFinite(other.order) ? other.order : NaN)),
+      archived: !!base.archived,
     };
     out.push(merged);
   }
@@ -409,11 +446,46 @@ function mergeStates(local, remote) {
     // 若 tombstone 晚于其更新时间，则不保留（被删除）
     if (!isDeletedAfter(rc.id, rc.updatedAt)) out.push(filterHistory(rc));
   }
-  // 若存在任何 order 字段，则按其排序；随后标准化为 0..N-1；否则保留既有顺序并赋默认序
-  const anyOrder = out.some(c => Number.isFinite(c && c.order));
-  if (anyOrder) {
-    out.sort((a, b) => (Number.isFinite(a.order) ? a.order : 1e9) - (Number.isFinite(b.order) ? b.order : 1e9));
-  }
+  // 统一排序策略：以“发起本次同步的一侧”为准（最后一次同步赢）
+  // 默认偏好本地顺序（本设备触发同步）。
+  const prefer = (opts && opts.order === 'remote') ? 'remote' : 'local';
+  const buildOrderMap = (arr) => {
+    const m = new Map();
+    try {
+      if (Array.isArray(arr)) {
+        // 根据 order 字段排序；无则按当前索引
+        const withIdx = arr.map((c, i) => ({ id: c && c.id, idx: Number.isFinite(c && c.order) ? Number(c.order) : i }))
+          .filter(x => x && x.id);
+        withIdx.sort((a, b) => a.idx - b.idx);
+        withIdx.forEach((x, i2) => m.set(x.id, i2));
+      }
+    } catch {}
+    return m;
+  };
+  const lOrder = buildOrderMap(l.counters);
+  const rOrder = buildOrderMap(r.counters);
+  out.sort((a, b) => {
+    const aid = a.id, bid = b.id;
+    const liA = lOrder.has(aid) ? lOrder.get(aid) : Infinity;
+    const liB = lOrder.has(bid) ? lOrder.get(bid) : Infinity;
+    const riA = rOrder.has(aid) ? rOrder.get(aid) : Infinity;
+    const riB = rOrder.has(bid) ? rOrder.get(bid) : Infinity;
+    if (prefer === 'local') {
+      const tierA = Number.isFinite(liA) ? 0 : 1;
+      const tierB = Number.isFinite(liB) ? 0 : 1;
+      if (tierA !== tierB) return tierA - tierB;
+      const aPos = (tierA === 0) ? liA : riA;
+      const bPos = (tierB === 0) ? liB : riB;
+      return (aPos - bPos);
+    } else {
+      const tierA = Number.isFinite(riA) ? 0 : 1;
+      const tierB = Number.isFinite(riB) ? 0 : 1;
+      if (tierA !== tierB) return tierA - tierB;
+      const aPos = (tierA === 0) ? riA : liA;
+      const bPos = (tierB === 0) ? riB : liB;
+      return (aPos - bPos);
+    }
+  });
   out.forEach((c, i) => { try { c.order = i; } catch {} });
   // ui 取本地（设备偏好）
   const ui = l.ui || r.ui || { panel: { x: null, y: null, w: null, h: null }, theme: 'pink' };
@@ -443,7 +515,44 @@ async function syncWithJsonBin(statusEl, silent = false) {
       // 远端未变化：如本地有改动则直接 PUT 写回；否则视为完成
       const meta = loadSyncMeta();
       if (!meta || !meta.pending) { setStatus('已是最新'); setCloudIndicator('ok', '已是最新'); if (!statusEl && !silent) alert('已是最新'); return; }
-      // 否则继续走 PUT 阶段
+      // 仅有本地改动（包括仅顺序变化）：直接按本地状态写回，避免读取空 304 响应体
+      setStatus('写回云端…');
+      try { setCloudIndicator('syncing', '写回云端…'); } catch {}
+      const putUrl = `https://api.jsonbin.io/v3/b/${encodeURIComponent(cfg.binId)}`;
+      const putHeaders = { 'Content-Type': 'application/json', 'X-Master-Key': cfg.apiKey };
+      if (meta && meta.etag) putHeaders['If-Match'] = meta.etag;
+      // 确保 order 连续化
+      try { state.counters.forEach((c, i) => { if (c) c.order = i; }); } catch {}
+      const payload = { ...state, schemaVersion: SCHEMA_VERSION, updatedAt: nowISO(), rev: (Number(state.rev||0) + 1) };
+      const putRes = await fetch(putUrl, { method: 'PUT', headers: putHeaders, body: JSON.stringify(payload) });
+      if (!putRes.ok) {
+        if (putRes.status === 412 || putRes.status === 409) {
+          // 新并发版本：拉取最新并按“本地优先顺序”合并后重试一次
+          const latest = await fetch(url, { method: 'GET', headers: { 'X-Master-Key': cfg.apiKey, 'X-Bin-Meta': 'false' } });
+          if (latest.ok) {
+            const latestObj = await latest.json();
+            try { const et = latest.headers && latest.headers.get && latest.headers.get('ETag'); const m2 = loadSyncMeta(); m2.etag = et || m2.etag || null; saveSyncMeta(m2); } catch {}
+            const merged2 = mergeStates(state, latestObj, { order: 'local' });
+            const payload2 = { ...merged2, schemaVersion: SCHEMA_VERSION, updatedAt: nowISO(), rev: (Number(merged2.rev||0) + 1) };
+            const headers2 = { 'Content-Type': 'application/json', 'X-Master-Key': cfg.apiKey };
+            try { const m = loadSyncMeta(); if (m && m.etag) headers2['If-Match'] = m.etag; } catch {}
+            const retry = await fetch(putUrl, { method: 'PUT', headers: headers2, body: JSON.stringify(payload2) });
+            if (!retry.ok) { setStatus('同步失败：冲突未解决（HTTP ' + retry.status + '）', true); setCloudIndicator('error', '冲突未解决'); return; }
+            state = merged2; save(); render();
+            try { const et2 = retry.headers && retry.headers.get && retry.headers.get('ETag'); const m3 = loadSyncMeta(); m3.etag = et2 || m3.etag || null; m3.lastSyncedAt = nowISO(); m3.pending = false; saveSyncMeta(m3); } catch {}
+            setStatus('同步完成'); setCloudIndicator('ok', '同步完成'); if (!statusEl && !silent) alert('同步完成');
+            return;
+          } else {
+            setStatus('同步失败：无法获取最新版本', true); setCloudIndicator('error', '无法获取最新'); return;
+          }
+        }
+        setStatus('同步失败：写回云端失败（HTTP ' + putRes.status + '）', true); setCloudIndicator('error', '写回失败');
+        return;
+      }
+      // 成功：更新 ETag 与本地标记
+      try { const et = putRes.headers && putRes.headers.get && putRes.headers.get('ETag'); const m = loadSyncMeta(); m.etag = et || m.etag || null; m.lastSyncedAt = nowISO(); m.pending = false; saveSyncMeta(m); } catch {}
+      setStatus('同步完成'); setCloudIndicator('ok', '同步完成'); if (!statusEl && !silent) alert('同步完成');
+      return;
     }
     if (res.status === 404) {
       // 云端不存在：询问是否创建并上传本地
@@ -462,10 +571,16 @@ async function syncWithJsonBin(statusEl, silent = false) {
     const remote = await res.json();
     // 更新 ETag
     try { const etag = res.headers && res.headers.get && res.headers.get('ETag'); const meta = loadSyncMeta(); meta.etag = etag || meta.etag || null; saveSyncMeta(meta); } catch {}
-    const merged = mergeStates(state, remote);
+    // 根据是否存在本地待同步变更决定顺序偏好：
+    // - 有本地待同步（本设备是“最后上传”的候选）：按本地顺序合并
+    // - 否则（其他设备被动同步）：按远端顺序合并，并避免仅因顺序差异而回写
+    const metaNow = loadSyncMeta();
+    const hasPending = !!(metaNow && metaNow.pending);
+    const preferOrder = hasPending ? 'local' : 'remote';
+    const merged = mergeStates(state, remote, { order: preferOrder });
     const changedLocal = !deepEqual(merged, state);
-    // 写回云端（如果和远端有差异）
-    const changedRemote = !deepEqual(merged, remote);
+    // 仅在“本地有待同步”时才考虑写回云端，防止被动设备把顺序再覆盖回去
+    const changedRemote = hasPending && !deepEqual(merged, remote);
     if (changedRemote) {
       setStatus('写回云端…');
       try { setCloudIndicator('syncing', '写回云端…'); } catch {}
@@ -483,7 +598,7 @@ async function syncWithJsonBin(statusEl, silent = false) {
           if (latest.ok) {
             const latestObj = await latest.json();
             try { const et = latest.headers && latest.headers.get && latest.headers.get('ETag'); const m2 = loadSyncMeta(); m2.etag = et || m2.etag || null; saveSyncMeta(m2); } catch {}
-            const merged2 = mergeStates(state, latestObj);
+            const merged2 = mergeStates(state, latestObj, { order: preferOrder });
             const payload2 = { ...merged2, schemaVersion: SCHEMA_VERSION, updatedAt: nowISO(), rev: (Number(merged2.rev||0) + 1) };
             const headers2 = { 'Content-Type': 'application/json', 'X-Master-Key': cfg.apiKey };
             try { const m = loadSyncMeta(); if (m && m.etag) headers2['If-Match'] = m.etag; } catch {}
@@ -505,7 +620,7 @@ async function syncWithJsonBin(statusEl, silent = false) {
     }
     if (changedLocal) {
       state = merged;
-      save();
+      if (hasPending) { save(); } else { saveSilent(); }
       render();
     }
     setStatus('同步完成'); setCloudIndicator('ok', '同步完成');
@@ -634,6 +749,27 @@ function ensurePopover() {
   return popoverEl;
 }
 
+// Simple app-style alert dialog (OK only)
+function infoDialog({ title = '提示', text = '', okText = '知道了' } = {}) {
+  return new Promise((resolve) => {
+    const dlg = el('#info-dialog');
+    if (!dlg) { try { alert(text || title); } catch {} resolve(true); return; }
+    const titleEl = el('#info-title');
+    const textEl = el('#info-text');
+    const okOld = el('#info-ok');
+    if (titleEl) titleEl.textContent = title;
+    if (textEl) textEl.textContent = text;
+    const okBtn = okOld ? okOld.cloneNode(true) : null;
+    if (okOld && okBtn) okOld.parentNode.replaceChild(okBtn, okOld);
+    if (okBtn) okBtn.textContent = okText || '知道了';
+    const finish = () => { closeModal(dlg); resolve(true); };
+    if (okBtn) okBtn.onclick = finish;
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); finish(); }, { once: true });
+    enableBackdropClose(dlg, finish);
+    openModal(dlg);
+  });
+}
+
 function scheduleHidePopover(delay = 160) {
   if (popoverHideTimer) clearTimeout(popoverHideTimer);
   popoverHideTimer = setTimeout(() => hidePopover(), delay);
@@ -670,18 +806,31 @@ function showPopoverForCounter(counter, anchorRect) {
     return b;
   };
   elp.appendChild(mk('历史记录', '', () => openHistory(counter.id)));
-  elp.appendChild(mk('重命名', '', () => openRename(counter.id, counter.name)));
+  if (!counter.archived) {
+    elp.appendChild(mk('重命名', '', () => openRename(counter.id, counter.name)));
+  }
   // Touch-friendly reorder options as DnD fallback
-  if (isTouchDevice()) {
+  if (isTouchDevice() && !counter.archived) {
     elp.appendChild(mk('上移', '', () => moveCounterById(counter.id, -1)));
     elp.appendChild(mk('下移', '', () => moveCounterById(counter.id, +1)));
     elp.appendChild(mk('置顶', '', () => moveCounterToEdge(counter.id, 'top')));
     elp.appendChild(mk('置底', '', () => moveCounterToEdge(counter.id, 'bottom')));
   }
-  elp.appendChild(mk('重置（清零并清空历史）', '', async () => {
-    const ok = await confirmDialog({ title: '重置计数器', text: `确认重置 “${counter.name}” 吗？这会将计数清零并删除所有历史。`, danger: true, okText: '重置' });
-    if (ok) resetCounter(counter.id);
-  }));
+  if (!counter.archived) {
+    elp.appendChild(mk('重置（清零并清空历史）', '', async () => {
+      const ok = await confirmDialog({ title: '重置计数器', text: `确认重置 “${counter.name}” 吗？这会将计数清零并删除所有历史。`, danger: true, okText: '重置' });
+      if (ok) resetCounter(counter.id);
+    }));
+  }
+  // Archive / Unarchive
+  if (!counter.archived) {
+    elp.appendChild(mk('归档', '', async () => {
+      const ok = true; // 归档无需确认，直接执行
+      if (ok) setArchived(counter.id, true);
+    }));
+  } else {
+    elp.appendChild(mk('取消归档', '', async () => { setArchived(counter.id, false); }));
+  }
   elp.appendChild(mk('删除', 'danger', async () => {
     const ok = await confirmDialog({ title: '删除计数器', text: `确认删除计数器 “${counter.name}” 吗？该操作不可撤销。`, danger: true, okText: '删除' });
     if (ok) removeCounter(counter.id);
@@ -846,11 +995,18 @@ function save() {
   markDirtyAndScheduleSync();
 }
 
+// 保存但不标记待同步（用于“从云端合并/拉取”写入本地时，避免触发二次上传）
+function saveSilent() {
+  try { state.counters.forEach((c, i) => { if (c) c.order = i; }); } catch {}
+  localStorage.setItem(storeKey, JSON.stringify(state));
+}
+
 function load() {
   try {
     const raw = localStorage.getItem(storeKey);
     if (raw) state = JSON.parse(raw);
-    if (!state.ui) state.ui = { panel: { x: null, y: null, w: null, h: null }, theme: 'pink' };
+    if (!state.ui) state.ui = { panel: { x: null, y: null, w: null, h: null }, theme: 'pink', showArchived: false };
+    if (state.ui && typeof state.ui.showArchived !== 'boolean') { try { state.ui.showArchived = false; } catch {} }
     if (!Array.isArray(state.tombstones)) state.tombstones = [];
     if (!Array.isArray(state.historyTombstones)) state.historyTombstones = [];
     // 若存在排序字段，优先按其排序；并标准化为 0..N-1
@@ -861,6 +1017,8 @@ function load() {
           state.counters.sort((a, b) => (Number.isFinite(a.order) ? a.order : 1e9) - (Number.isFinite(b.order) ? b.order : 1e9));
         }
         state.counters.forEach((c, i) => { if (c) c.order = i; });
+        // 标准化缺失字段
+        state.counters.forEach((c) => { if (c && typeof c.archived !== 'boolean') c.archived = false; });
       }
     } catch {}
   } catch (e) {
@@ -902,6 +1060,7 @@ function addCounter(name = '新的计数器') {
     history: [],
     createdAt: nowISO(),
     updatedAt: nowISO(),
+    archived: false,
   };
   state.counters.unshift(c);
   lastAddedId = c.id;
@@ -985,6 +1144,106 @@ function renameCounter(id, name) {
   render();
 }
 
+function setArchived(id, archived = true) {
+  const c = state.counters.find((x) => x.id === id);
+  if (!c) return;
+  try { clearMenuOpenTimer(); hidePopover(); } catch {}
+  // 先立即更新状态并保存（标记待同步），以便用户快速点击云同步时不会错过这次变更
+  c.archived = !!archived;
+  c.updatedAt = nowISO();
+  // 保存但暂不 render，避免卡片立刻被移除导致没有离场动画
+  save();
+  // 若当前列表中存在该卡片，则做离场动画后再刷新视图
+  try {
+    const card = document.querySelector(`.card[data-id="${id}"]`);
+    if (card && card.isConnected) {
+      const cs = getComputedStyle(card);
+      const rect = card.getBoundingClientRect();
+      card.style.height = rect.height + 'px';
+      card.style.marginTop = cs.marginTop;
+      card.style.marginBottom = cs.marginBottom;
+      card.style.paddingTop = cs.paddingTop;
+      card.style.paddingBottom = cs.paddingBottom;
+      void card.offsetHeight;
+      card.classList.add('leaving');
+      requestAnimationFrame(() => {
+        card.style.height = '0px';
+        card.style.marginTop = '0px';
+        card.style.marginBottom = '0px';
+        card.style.paddingTop = '0px';
+        card.style.paddingBottom = '0px';
+      });
+      const finish = () => {
+        try { card.removeEventListener('transitionend', finish); } catch {}
+        render();
+      };
+      card.addEventListener('transitionend', finish);
+      setTimeout(finish, 300);
+      return;
+    }
+  } catch {}
+  // 不在当前列表（或未找到 DOM 卡片）：状态已保存，这里只需刷新
+  render();
+}
+
+function toggleArchivedViewAnimated() {
+  const container = el('#counters');
+  const finishSwitch = () => {
+    try { state.ui.showArchived = !state.ui.showArchived; save(); render(); } catch {}
+    try {
+      const news = Array.from(document.querySelectorAll('#counters .card'));
+      news.forEach((n, j) => {
+        n.classList.add('enter');
+        setTimeout(() => { try { n.classList.remove('enter'); } catch {} }, 320 + j * 5);
+      });
+    } catch {}
+  };
+  if (!container) { finishSwitch(); return; }
+  const cards = Array.from(container.querySelectorAll('.card'));
+  if (!cards.length) { finishSwitch(); return; }
+  let remaining = cards.length;
+  cards.forEach((card, i) => {
+    try {
+      const cs = getComputedStyle(card);
+      const rect = card.getBoundingClientRect();
+      card.style.height = rect.height + 'px';
+      card.style.marginTop = cs.marginTop;
+      card.style.marginBottom = cs.marginBottom;
+      card.style.paddingTop = cs.paddingTop;
+      card.style.paddingBottom = cs.paddingBottom;
+      void card.offsetHeight;
+      card.classList.add('leaving');
+      setTimeout(() => {
+        try {
+          card.style.height = '0px';
+          card.style.marginTop = '0px';
+          card.style.marginBottom = '0px';
+          card.style.paddingTop = '0px';
+          card.style.paddingBottom = '0px';
+        } catch {}
+      }, i * 8);
+      const onEnd = () => {
+        try { card.removeEventListener('transitionend', onEnd); } catch {}
+        if (--remaining === 0) {
+          try { state.ui.showArchived = !state.ui.showArchived; save(); render(); } catch {}
+          try {
+            // 进入动画：为新列表卡片添加 enter 动画
+            const news = Array.from(document.querySelectorAll('#counters .card'));
+            news.forEach((n, j) => {
+              n.classList.add('enter');
+              setTimeout(() => { try { n.classList.remove('enter'); } catch {} }, 320 + j * 5);
+            });
+          } catch {}
+        }
+      };
+      card.addEventListener('transitionend', onEnd);
+      setTimeout(onEnd, 340 + i * 8);
+    } catch {
+      if (--remaining === 0) { try { state.ui.showArchived = !state.ui.showArchived; save(); render(); } catch {} }
+    }
+  });
+}
+
 function addHistory(c, delta, note) {
   c.history.unshift({ ts: nowISO(), delta, note: note || '' });
   // keep last N if needed; for now, keep all
@@ -1020,6 +1279,7 @@ function updateCounterView(id, animate = true) {
 function addRecord(id, note) {
   const c = state.counters.find((x) => x.id === id);
   if (!c) return;
+  if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; }
   addHistory(c, 0, note || '');
   c.updatedAt = nowISO();
   save();
@@ -1061,6 +1321,7 @@ function flashRecordIndicator(id, text = '已记录') {
 function inc(id, delta = +1, note) {
   const c = state.counters.find((x) => x.id === id);
   if (!c) return;
+    if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; }
   if (delta < 0) {
     if (c.count <= 0) return; // 下限保护：不允许负数
     // 撤销：删除最近的一条 +1 历史并回退计数（作为“删除历史”处理，写入墓碑以同步到云端）
@@ -1094,7 +1355,8 @@ function inc(id, delta = +1, note) {
   c.updatedAt = nowISO();
   lastBumpId = id;
   save();
-  render();
+  // 局部刷新，避免整卡重建导致按压反馈类名被打断
+  updateCounterView(id, true);
 }
 
 function fmtTime(s) {
@@ -1116,21 +1378,29 @@ function fmtDateParts(s) {
 function render() {
   const container = el('#counters');
   container.innerHTML = '';
-  if (!state.counters.length) {
+  const viewArchived = !!(state && state.ui && state.ui.showArchived);
+  // Update archived toggle button label
+  try {
+    const btn = document.querySelector('#btn-archived');
+    if (btn) btn.textContent = viewArchived ? '返回' : '查看归档';
+  } catch {}
+  const list = Array.isArray(state.counters) ? state.counters.filter(c => !!c && (!!c.archived === viewArchived)) : [];
+  if (!list.length) {
     const hint = document.createElement('div');
     hint.className = 'muted';
     hint.style.padding = '8px';
-    hint.textContent = '还没有计数器，点上方 “+ 新建计数器” 创建一个。';
+    hint.textContent = viewArchived ? '暂无归档计数器。' : '还没有计数器，点上方 “+ 新建计数器” 创建一个。';
     container.appendChild(hint);
     // Even在空列表时也应用最小高度策略（预留三张卡的空间）
     ensureMinCounterArea(3);
     return;
   }
 
-  for (const c of state.counters) {
+  for (const c of list) {
     const card = document.createElement('div');
     card.className = 'card';
     card.dataset.id = c.id;
+    if (c.archived) { card.classList.add('archived'); card.dataset.archived = '1'; }
 
     const left = document.createElement('div');
     left.className = 'stack';
@@ -1156,6 +1426,14 @@ function render() {
     // Remove tooltip; keep accessible label
     try { minus.setAttribute('aria-label', '减少 1'); } catch {}
     minus.className = 'btn-minus ghost round btn-icon';
+    // Local tap feedback to ensure visibility even without global handlers
+    const minusTapOn = () => { try { minus.classList.add('tap-flash'); } catch {} };
+    const minusTapOff = () => { try { minus.classList.remove('tap-flash'); } catch {} };
+    minus.addEventListener('pointerdown', minusTapOn);
+    minus.addEventListener('pointerup', () => setTimeout(minusTapOff, 200), { passive: true });
+    minus.addEventListener('pointercancel', minusTapOff, { passive: true });
+    minus.addEventListener('touchstart', minusTapOn, { passive: true });
+    minus.addEventListener('touchend', () => setTimeout(minusTapOff, 200), { passive: true });
     // Use click listener to blur after action to avoid sticky focus
     minus.addEventListener('click', (e) => { inc(c.id, -1); try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} });
     const plus = document.createElement('button');
@@ -1165,13 +1443,16 @@ function render() {
     try { plus.setAttribute('aria-label', '增加 1'); } catch {}
     plus.className += ' btn-plus';
     // Click to +1；长按或 Shift 点击弹“快速备注”应用内浮窗
-    let holdTimer = null; let consumedByHold = false;
+    let holdTimer = null; let consumedByHold = false; let handledThisTap = false;
     const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
     plus.addEventListener('pointerdown', (e) => {
       consumedByHold = false;
+      handledThisTap = false;
+      try { plus.classList.add('tap-flash'); } catch {}
       clearHold();
       holdTimer = setTimeout(() => {
         consumedByHold = true;
+        if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; }
         const r = plus.getBoundingClientRect();
         showQuickNote(r, (note) => inc(c.id, +1, note || ''));
       }, LONG_PRESS_MS);
@@ -1180,22 +1461,38 @@ function render() {
       clearHold();
       if (!consumedByHold) {
         if (e.shiftKey) {
-          const r = plus.getBoundingClientRect();
-          showQuickNote(r, (note) => inc(c.id, +1, note || ''));
+          if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} }
+          else {
+            const r = plus.getBoundingClientRect();
+            showQuickNote(r, (note) => inc(c.id, +1, note || ''));
+          }
         } else {
           inc(c.id, +1);
         }
+        handledThisTap = true;
       } else {
         // 若是长按触发的备注，阻断后续的合成 click，避免打断输入聚焦
         try { e.preventDefault(); } catch {}
       }
+      // Remove local tap effect shortly after release
+      setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, 200);
       try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {}
     });
+    // iOS Safari（老版本）等无 Pointer Events 的回退处理
+    plus.addEventListener('touchstart', () => { consumedByHold = false; handledThisTap = false; try { plus.classList.add('tap-flash'); } catch {} clearHold(); holdTimer = setTimeout(() => { consumedByHold = true; if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; } const r = plus.getBoundingClientRect(); showQuickNote(r, (note) => inc(c.id, +1, note || '')); }, LONG_PRESS_MS); }, { passive: true });
+    plus.addEventListener('touchend', (e) => {
+      clearHold();
+      if (!consumedByHold) { inc(c.id, +1); handledThisTap = true; }
+      setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, 200);
+      try { e.preventDefault(); } catch {}
+      try { plus.blur(); } catch {}
+    }, { passive: false });
     // 再加一层 click 兜底：
     // - 若此次 click 来源于“长按”触发的快速备注，则吞掉 click，避免冒泡到 document 触发关闭
-    // - 否则仅做 blur，防止粘住的选中态
+    // - 否则在未被 pointer/touch 处理时执行 +1，兼容老设备
     plus.addEventListener('click', (e) => {
       if (consumedByHold) { e.preventDefault(); e.stopPropagation(); return; }
+      if (!handledThisTap) { inc(c.id, +1); handledThisTap = true; }
       try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {}
     });
     plus.addEventListener('pointerleave', clearHold);
@@ -1210,6 +1507,7 @@ function render() {
     quick.textContent = '记';
     quick.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; }
       const r = quick.getBoundingClientRect();
       showQuickNote(r, (note) => addRecord(c.id, note || ''), '快速记录…', {
         dynamicOk: true,
@@ -1220,7 +1518,8 @@ function render() {
       try { quick.blur(); } catch {}
     });
     // minus disabled at 0
-    minus.disabled = c.count <= 0;
+    // 为了在归档时仍可点击并弹出提示，不在归档态禁用按钮
+    minus.disabled = (!c.archived) ? (c.count <= 0) : false;
 
     // More button -> floating popover
     const more = document.createElement('button');
@@ -1260,7 +1559,20 @@ function render() {
       // 防止移动端按钮保持焦点样式
       try { more.blur(); } catch {}
     });
-    more.addEventListener('pointerleave', (e) => { clearMenuOpenTimer(); if (!movingIntoPopover(e)) scheduleHidePopover(); });
+    // Local tap shadow feedback for more button (three dots)
+    const mTapOn = () => { try { more.classList.remove('tap-flash'); void more.offsetWidth; more.classList.add('tap-flash'); } catch {} };
+    const mTapOff = () => { try { more.classList.remove('tap-flash'); } catch {} };
+    more.addEventListener('pointerdown', mTapOn);
+    more.addEventListener('pointerup', () => setTimeout(mTapOff, 160), { passive: true });
+    more.addEventListener('pointercancel', mTapOff, { passive: true });
+    more.addEventListener('touchstart', mTapOn, { passive: true });
+    more.addEventListener('touchend', () => setTimeout(mTapOff, 160), { passive: true });
+    more.addEventListener('pointerleave', (e) => {
+      // 触屏上不要在 pointerleave 立刻隐藏，避免点击后立刻关闭导致“只闪一下”
+      try { if (isTouchDevice()) return; } catch {}
+      clearMenuOpenTimer();
+      if (!movingIntoPopover(e)) scheduleHidePopover();
+    });
     // 确保 touch/pointer 抬起后不保留选中态
     more.addEventListener('pointerup', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
     more.addEventListener('touchend', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
@@ -1377,6 +1689,12 @@ function setupDnD() {
   const stopAutoScroll = () => { if (autoScrollRAF) { cancelAnimationFrame(autoScrollRAF); autoScrollRAF = null; } };
 
   const onPointerDown = (e, card) => {
+    // 禁止对归档项目进行拖拽排序（需先取消归档）
+    try {
+      if ((card && card.dataset && card.dataset.archived === '1') || (state && state.ui && state.ui.showArchived)) {
+        return;
+      }
+    } catch {}
     if (e.button !== 0) return;
     if (e.target && e.target.closest && e.target.closest('button, input, label, select, textarea')) return;
     e.preventDefault();
@@ -1594,6 +1912,7 @@ function removeDragImage() {
 function openHistory(id) {
   const c = state.counters.find((x) => x.id === id);
   if (!c) return;
+  const readonly = !!c.archived;
   const dialog = el('#history-dialog');
   const list = el('#history-list');
   // Reset any min-height lock from previous runs
@@ -1621,17 +1940,19 @@ function openHistory(id) {
         const cls = (rec.delta > 0) ? 'add' : (rec.delta < 0 ? 'sub' : 'note');
         pill.className = 'pill ' + cls;
         pill.textContent = (rec.delta > 0) ? `+${rec.delta}` : (rec.delta < 0 ? `${rec.delta}` : '记录');
-        const delBtn = document.createElement('button');
-        delBtn.className = 'btn-icon btn-icon-sm btn-danger round';
-        // Icon-only: add aria-label instead of title
-        try { delBtn.setAttribute('aria-label', '删除记录'); } catch {}
-        delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-        delBtn.onclick = () => deleteHistoryEntryByTs(id, rec.ts);
-        const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = rec.note ? '编辑' : '添加'; editBtn.style.marginLeft = '8px';
-        editBtn.onclick = () => { try { li.querySelector('button.ghost')?.click(); } catch {} };
-        // Append floats in reverse for right-floating layout: delete -> edit -> pill
-        right.appendChild(delBtn);
-        right.appendChild(editBtn);
+        if (!readonly) {
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn-icon btn-icon-sm btn-danger round';
+          // Icon-only: add aria-label instead of title
+          try { delBtn.setAttribute('aria-label', '删除记录'); } catch {}
+          delBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+          delBtn.onclick = () => deleteHistoryEntryByTs(id, rec.ts);
+          const editBtn = document.createElement('button'); editBtn.className = 'ghost'; editBtn.textContent = rec.note ? '编辑' : '添加'; editBtn.style.marginLeft = '8px';
+          editBtn.onclick = () => { try { li.querySelector('button.ghost')?.click(); } catch {} };
+          // Append floats in reverse for right-floating layout: delete -> edit -> pill
+          right.appendChild(delBtn);
+          right.appendChild(editBtn);
+        }
         right.appendChild(pill);
         if (rec.note) { const ns = document.createElement('span'); ns.className = 'history-note'; ns.textContent = rec.note; right.appendChild(ns); }
         const cur = li.querySelector('.note-edit, .right');
@@ -1675,6 +1996,12 @@ function openHistory(id) {
       pill.textContent = (h.delta > 0) ? `+${h.delta}` : (h.delta < 0 ? `${h.delta}` : '记录');
 
       const appendNoteAndEdit = () => {
+        if (readonly) {
+          // 只读：不提供编辑/删除控件，仅展示徽章与备注
+          right.appendChild(pill);
+          if (h.note) { const noteSpan = document.createElement('span'); noteSpan.className = 'history-note'; noteSpan.textContent = h.note; right.appendChild(noteSpan); }
+          return;
+        }
         // Edit note inline button (float right)
         const editBtn = document.createElement('button');
         editBtn.className = 'ghost';
@@ -1813,6 +2140,10 @@ function deleteHistoryEntry(id, idx) {
 
 // Stable delete by record timestamp (avoids index drift during concurrent animations)
 function deleteHistoryEntryByTs(id, ts) {
+  try {
+    const c = state.counters.find(x => x && x.id === id);
+    if (c && c.archived) { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); return; }
+  } catch {}
   const c = state.counters.find((x) => x.id === id);
   if (!c) return;
   const i = c.history.findIndex((h) => h && h.ts === ts);
@@ -2050,6 +2381,7 @@ function importJSON(file) {
       state = obj;
       if (!Array.isArray(state.tombstones)) state.tombstones = [];
       if (!Array.isArray(state.historyTombstones)) state.historyTombstones = [];
+      try { if (Array.isArray(state.counters)) state.counters.forEach(c => { if (c && typeof c.archived !== 'boolean') c.archived = false; }); } catch {}
       save();
       render();
     } catch (e) {
@@ -2173,6 +2505,10 @@ function setupDrag() {
 
 function setupUI() {
   el('#btn-add').addEventListener('click', () => addCounter());
+  const btnArchived = el('#btn-archived');
+  if (btnArchived) {
+    btnArchived.addEventListener('click', () => toggleArchivedViewAnimated());
+  }
   el('#file-import').addEventListener('change', (e) => {
     try {
       const target = e && e.target ? e.target : null;
@@ -2227,6 +2563,14 @@ function setupUI() {
       themeBtn.textContent = label(current);
     };
     themeBtn.addEventListener('click', cycle);
+    // Local tap shadow feedback for theme button
+    const onTapOn = () => { try { themeBtn.classList.remove('tap-flash'); void themeBtn.offsetWidth; themeBtn.classList.add('tap-flash'); } catch {} };
+    const onTapOff = () => { try { themeBtn.classList.remove('tap-flash'); } catch {} };
+    themeBtn.addEventListener('pointerdown', onTapOn);
+    themeBtn.addEventListener('pointerup', () => setTimeout(onTapOff, 160), { passive: true });
+    themeBtn.addEventListener('pointercancel', onTapOff, { passive: true });
+    themeBtn.addEventListener('touchstart', onTapOn, { passive: true });
+    themeBtn.addEventListener('touchend', () => setTimeout(onTapOff, 160), { passive: true });
   }
 
   // Click outside closes floating popover
@@ -2272,7 +2616,16 @@ function setupUI() {
       } catch {}
       return isTouchDevice(); // 回退
     };
-    const addFlash = (btn) => { try { if (!btn.disabled) btn.classList.add('tap-flash'); } catch {} };
+    const addFlash = (btn) => {
+      try {
+        if (!btn || btn.disabled) return;
+        // 重新触发过渡：先移除、强制重排、再添加
+        btn.classList.remove('tap-flash');
+        // 强制 reflow 以重置过渡状态
+        void btn.offsetWidth;
+        btn.classList.add('tap-flash');
+      } catch {}
+    };
     const clearFlash = () => {
       try {
         const list = document.querySelectorAll('button.tap-flash');
@@ -2352,7 +2705,19 @@ function setupUI() {
       // 防止移动端按钮保持焦点样式
       try { gbtn.blur(); } catch {}
     });
-    gbtn.addEventListener('pointerleave', (e) => { clearMenuOpenTimer(); if (!movingIntoPopover(e)) scheduleHidePopover(); });
+    // Local tap shadow feedback for global menu button
+    const gTapOn = () => { try { gbtn.classList.remove('tap-flash'); void gbtn.offsetWidth; gbtn.classList.add('tap-flash'); } catch {} };
+    const gTapOff = () => { try { gbtn.classList.remove('tap-flash'); } catch {} };
+    gbtn.addEventListener('pointerdown', gTapOn);
+    gbtn.addEventListener('pointerup', () => setTimeout(gTapOff, 160), { passive: true });
+    gbtn.addEventListener('pointercancel', gTapOff, { passive: true });
+    gbtn.addEventListener('touchstart', gTapOn, { passive: true });
+    gbtn.addEventListener('touchend', () => setTimeout(gTapOff, 160), { passive: true });
+    gbtn.addEventListener('pointerleave', (e) => {
+      try { if (isTouchDevice()) return; } catch {}
+      clearMenuOpenTimer();
+      if (!movingIntoPopover(e)) scheduleHidePopover();
+    });
     // 确保 touch/pointer 抬起后不保留选中态
     gbtn.addEventListener('pointerup', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
     gbtn.addEventListener('touchend', (e) => { try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} }, { passive: true });
