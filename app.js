@@ -35,6 +35,7 @@ let dragImageEl = null; // custom drag preview element
 let pendingFlip = null; // prev positions for FLIP animation
 let pendingNameAnim = null; // { id, old, neo } for rename animation
 const LONG_PRESS_MS = 320;
+const TAP_FLASH_MS = 180; // 固定的点击反馈时长（ms），统一所有按钮
 
 // --- 同步（JSONBin）最小配置工具 ---
 function loadSyncConfig() {
@@ -787,7 +788,12 @@ function hidePopover() {
   // 关闭时也清除可能的 hover 打开定时器，避免误触再次打开
   try { clearMenuOpenTimer(); } catch {}
   // 无论浮层当前是否可见，都要清除所有三点按钮的展开标记，避免点点持续跳动
-  try { document.querySelectorAll('.btn-ellipsis[aria-expanded="true"]').forEach(b => b.removeAttribute('aria-expanded')); } catch {}
+  try {
+    document.querySelectorAll('.btn-ellipsis[aria-expanded="true"]').forEach(b => {
+      b.removeAttribute('aria-expanded');
+      b.classList.remove('tap-flash'); // 关闭时立即移除点击高亮
+    });
+  } catch {}
 }
 
 function showPopoverForCounter(counter, anchorRect) {
@@ -1430,10 +1436,10 @@ function render() {
     const minusTapOn = () => { try { minus.classList.add('tap-flash'); } catch {} };
     const minusTapOff = () => { try { minus.classList.remove('tap-flash'); } catch {} };
     minus.addEventListener('pointerdown', minusTapOn);
-    minus.addEventListener('pointerup', () => setTimeout(minusTapOff, 200), { passive: true });
+    minus.addEventListener('pointerup', () => setTimeout(minusTapOff, TAP_FLASH_MS), { passive: true });
     minus.addEventListener('pointercancel', minusTapOff, { passive: true });
     minus.addEventListener('touchstart', minusTapOn, { passive: true });
-    minus.addEventListener('touchend', () => setTimeout(minusTapOff, 200), { passive: true });
+    minus.addEventListener('touchend', () => setTimeout(minusTapOff, TAP_FLASH_MS), { passive: true });
     // Use click listener to blur after action to avoid sticky focus
     minus.addEventListener('click', (e) => { inc(c.id, -1); try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {} });
     const plus = document.createElement('button');
@@ -1474,19 +1480,24 @@ function render() {
         // 若是长按触发的备注，阻断后续的合成 click，避免打断输入聚焦
         try { e.preventDefault(); } catch {}
       }
-      // Remove local tap effect shortly after release
-      setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, 200);
+      // Remove local tap effect shortly after release（统一固定时长）
+      setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, TAP_FLASH_MS);
       try { e.currentTarget && e.currentTarget.blur && e.currentTarget.blur(); } catch {}
     });
     // iOS Safari（老版本）等无 Pointer Events 的回退处理
-    plus.addEventListener('touchstart', () => { consumedByHold = false; handledThisTap = false; try { plus.classList.add('tap-flash'); } catch {} clearHold(); holdTimer = setTimeout(() => { consumedByHold = true; if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; } const r = plus.getBoundingClientRect(); showQuickNote(r, (note) => inc(c.id, +1, note || '')); }, LONG_PRESS_MS); }, { passive: true });
-    plus.addEventListener('touchend', (e) => {
-      clearHold();
-      if (!consumedByHold) { inc(c.id, +1); handledThisTap = true; }
-      setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, 200);
-      try { e.preventDefault(); } catch {}
-      try { plus.blur(); } catch {}
-    }, { passive: false });
+    // 仅在不支持 PointerEvent 的环境下绑定 touch 版本，避免移动端重复触发（pointerup + touchend）导致 +1 两次
+    try {
+      if (!("PointerEvent" in window)) {
+        plus.addEventListener('touchstart', () => { consumedByHold = false; handledThisTap = false; try { plus.classList.add('tap-flash'); } catch {} clearHold(); holdTimer = setTimeout(() => { consumedByHold = true; if (c.archived) { try { infoDialog({ title: '已归档', text: '该计数器已归档。如需操作，请先取消归档。', okText: '知道了' }); } catch {} return; } const r = plus.getBoundingClientRect(); showQuickNote(r, (note) => inc(c.id, +1, note || '')); }, LONG_PRESS_MS); }, { passive: true });
+        plus.addEventListener('touchend', (e) => {
+          clearHold();
+          if (!consumedByHold && !handledThisTap) { inc(c.id, +1); handledThisTap = true; }
+          setTimeout(() => { try { plus.classList.remove('tap-flash'); } catch {} }, TAP_FLASH_MS);
+          try { e.preventDefault(); } catch {}
+          try { plus.blur(); } catch {}
+        }, { passive: false });
+      }
+    } catch {}
     // 再加一层 click 兜底：
     // - 若此次 click 来源于“长按”触发的快速备注，则吞掉 click，避免冒泡到 document 触发关闭
     // - 否则在未被 pointer/touch 处理时执行 +1，兼容老设备
@@ -1554,8 +1565,14 @@ function render() {
       clearMenuOpenTimer();
       const pe = ensurePopover();
       const isOpen = !pe.classList.contains('hidden') && currentPopoverFor === c.id;
-      if (isOpen) { hidePopover(); try { more.removeAttribute('aria-expanded'); } catch {} }
-      else openMore();
+      if (isOpen) {
+        hidePopover();
+        try { more.removeAttribute('aria-expanded'); } catch {}
+        // 关闭时立刻移除“点击高亮”，避免延迟消退
+        try { more.classList.remove('tap-flash'); } catch {}
+      } else {
+        openMore();
+      }
       // 防止移动端按钮保持焦点样式
       try { more.blur(); } catch {}
     });
@@ -1563,10 +1580,10 @@ function render() {
     const mTapOn = () => { try { more.classList.remove('tap-flash'); void more.offsetWidth; more.classList.add('tap-flash'); } catch {} };
     const mTapOff = () => { try { more.classList.remove('tap-flash'); } catch {} };
     more.addEventListener('pointerdown', mTapOn);
-    more.addEventListener('pointerup', () => setTimeout(mTapOff, 160), { passive: true });
+    more.addEventListener('pointerup', () => setTimeout(mTapOff, TAP_FLASH_MS), { passive: true });
     more.addEventListener('pointercancel', mTapOff, { passive: true });
     more.addEventListener('touchstart', mTapOn, { passive: true });
-    more.addEventListener('touchend', () => setTimeout(mTapOff, 160), { passive: true });
+    more.addEventListener('touchend', () => setTimeout(mTapOff, TAP_FLASH_MS), { passive: true });
     more.addEventListener('pointerleave', (e) => {
       // 触屏上不要在 pointerleave 立刻隐藏，避免点击后立刻关闭导致“只闪一下”
       try { if (isTouchDevice()) return; } catch {}
@@ -2567,10 +2584,10 @@ function setupUI() {
     const onTapOn = () => { try { themeBtn.classList.remove('tap-flash'); void themeBtn.offsetWidth; themeBtn.classList.add('tap-flash'); } catch {} };
     const onTapOff = () => { try { themeBtn.classList.remove('tap-flash'); } catch {} };
     themeBtn.addEventListener('pointerdown', onTapOn);
-    themeBtn.addEventListener('pointerup', () => setTimeout(onTapOff, 160), { passive: true });
+    themeBtn.addEventListener('pointerup', () => setTimeout(onTapOff, TAP_FLASH_MS), { passive: true });
     themeBtn.addEventListener('pointercancel', onTapOff, { passive: true });
     themeBtn.addEventListener('touchstart', onTapOn, { passive: true });
-    themeBtn.addEventListener('touchend', () => setTimeout(onTapOff, 160), { passive: true });
+    themeBtn.addEventListener('touchend', () => setTimeout(onTapOff, TAP_FLASH_MS), { passive: true });
   }
 
   // Click outside closes floating popover
@@ -2629,8 +2646,8 @@ function setupUI() {
     const clearFlash = () => {
       try {
         const list = document.querySelectorAll('button.tap-flash');
-        // 稍微延长停留时间，让动画不要“一闪而过”
-        list.forEach((b) => setTimeout(() => { try { b.classList.remove('tap-flash'); } catch {} }, 360));
+        // 统一固定反馈时长，独立于按压时长
+        list.forEach((b) => setTimeout(() => { try { b.classList.remove('tap-flash'); } catch {} }, TAP_FLASH_MS));
       } catch {}
     };
     // Pointer-friendly path
@@ -2700,8 +2717,15 @@ function setupUI() {
       clearMenuOpenTimer();
       const pe = ensurePopover();
       const isOpen = !pe.classList.contains('hidden') && currentPopoverFor === 'global';
-      if (isOpen) { hidePopover(); try { gbtn.removeAttribute('aria-expanded'); } catch {} }
-      else { try { gbtn.setAttribute('aria-expanded','true'); } catch {}; openMenu(); }
+      if (isOpen) {
+        hidePopover();
+        try { gbtn.removeAttribute('aria-expanded'); } catch {}
+        // 关闭时立刻移除“点击高亮”，与 PC 离开即取消一致
+        try { gbtn.classList.remove('tap-flash'); } catch {}
+      } else {
+        try { gbtn.setAttribute('aria-expanded','true'); } catch {}
+        openMenu();
+      }
       // 防止移动端按钮保持焦点样式
       try { gbtn.blur(); } catch {}
     });
@@ -2709,10 +2733,10 @@ function setupUI() {
     const gTapOn = () => { try { gbtn.classList.remove('tap-flash'); void gbtn.offsetWidth; gbtn.classList.add('tap-flash'); } catch {} };
     const gTapOff = () => { try { gbtn.classList.remove('tap-flash'); } catch {} };
     gbtn.addEventListener('pointerdown', gTapOn);
-    gbtn.addEventListener('pointerup', () => setTimeout(gTapOff, 160), { passive: true });
+    gbtn.addEventListener('pointerup', () => setTimeout(gTapOff, TAP_FLASH_MS), { passive: true });
     gbtn.addEventListener('pointercancel', gTapOff, { passive: true });
     gbtn.addEventListener('touchstart', gTapOn, { passive: true });
-    gbtn.addEventListener('touchend', () => setTimeout(gTapOff, 160), { passive: true });
+    gbtn.addEventListener('touchend', () => setTimeout(gTapOff, TAP_FLASH_MS), { passive: true });
     gbtn.addEventListener('pointerleave', (e) => {
       try { if (isTouchDevice()) return; } catch {}
       clearMenuOpenTimer();

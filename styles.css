@@ -225,12 +225,16 @@ textarea {
   gap: 8px;
   align-items: center;
   transition: box-shadow .2s ease, transform .14s ease, border-color .2s ease;
-  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 10%, transparent);
+  /* Fallback: 不使用 color-mix 的内侧描边，避免在部分老浏览器出现黑框 */
+  box-shadow: none;
   position: relative; /* for drop indicators */
   cursor: default; /* show normal pointer on hover */
   /* Reduce text flicker during FLIP by keeping a stable layer */
   will-change: transform;
   backface-visibility: hidden;
+}
+@supports (background: color-mix(in oklab, #fff 10%, transparent)) {
+  .card { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 10%, transparent); }
 }
 
 /* Archived card state: subtly muted */
@@ -277,9 +281,14 @@ textarea {
   font-weight: 800; font-size: 13px; letter-spacing: .3px;
   color: #fff;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border: 1px solid rgba(255,255,255,0.15);
+  /* 用 inset 边框避免少数浏览器在右侧出现渐变+边框的“断口” */
+  border: 0;
   border-radius: 999px;
-  box-shadow: 0 4px 10px rgba(124,77,255,0.25);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), 0 4px 10px rgba(124,77,255,0.25);
+  background-clip: padding-box;
+  /* 进一步防止像素缝隙 */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 .badge.flip { animation: badge-flip .3s cubic-bezier(.2,.7,.2,1); transform-origin: 50% 60%; will-change: transform; }
 /* Include perspective in keyframes to ensure the flip is visible on mobile Safari/Chrome */
@@ -636,12 +645,18 @@ details.advanced .adv-content { transition: grid-template-rows .24s cubic-bezier
 
 /* Focus ring */
 button:focus { outline: none; }
+.card:focus { outline: none; }
+/* Fallback 优先：不支持 color-mix/oklab 的浏览器使用主题色 */
+button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 支持 color-mix 的浏览器用更柔和的主题混合色 */
 button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); outline-offset: 2px; }
 /* 备注输入框：获得焦点时取消外轮廓，改为加粗边框，避免双层描边 */
 .note-quick .note-input:focus,
 .note-quick .note-input:focus-visible {
   outline: none !important; /* 避免双重外轮廓 */
   box-shadow: none;
+  /* Fallback: theme accent when color-mix unsupported */
+  border-color: var(--accent);
   border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* 边框变粗时缩小内边距以保持尺寸稳定 */
@@ -667,6 +682,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 #sync-dialog input[type="password"]:focus-visible {
   outline: none !important;
   box-shadow: none;
+  border-color: var(--accent); /* Fallback for older browsers */
   border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* keep size stable when border grows */
@@ -677,6 +693,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 #rename-input:focus-visible {
   outline: none !important;
   box-shadow: none;
+  border-color: var(--accent); /* Fallback */
   border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 7px 9px; /* 原 8px 10px，边框变粗后保持整体尺寸 */
@@ -687,6 +704,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 .note-edit input:focus-visible {
   outline: none !important;
   box-shadow: none;
+  border-color: var(--accent); /* Fallback */
   border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* 原 6px 8px，保持尺寸 */
@@ -706,8 +724,11 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 /* 保持与PC一致的交错延迟（展开态） */
 .no-hover .btn-ellipsis[aria-expanded="true"] .dots i:nth-child(2) { animation-delay: .08s !important; }
 .no-hover .btn-ellipsis[aria-expanded="true"] .dots i:nth-child(3) { animation-delay: .16s !important; }
-/* 移动端：彻底关闭 hover 带来的阴影/上浮，避免点一下就“粘住” */
-.no-hover button:not(:disabled):hover, .no-hover .btn-ellipsis:hover {
+/* 移动端：关闭 hover 粘滞效果，但“展开中的三点菜单”例外，需保持阴影/上浮 */
+/* 说明：`button:hover` 选择器比 `.btn-ellipsis[aria-expanded]` 更具特异性，
+   会把展开态的阴影覆盖掉，导致只在首次点击时闪一下。这里排除展开态。*/
+.no-hover button:not(:disabled):hover:not([aria-expanded="true"]):not(.tap-flash),
+.no-hover .btn-ellipsis:hover:not([aria-expanded="true"]):not(.tap-flash) {
   filter: none !important;
   transform: none !important;
   box-shadow: none !important;
@@ -894,4 +915,6 @@ button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1
   .switch:hover input:checked + .slider::before { transform: translateX(20px) scale(1.06); }
 }
 /* 键盘聚焦：统一为输入框风格（仅改变边框颜色，不加外层描边） */
+/* Fallback first, then enhanced color for capable browsers */
+.switch:focus-within .slider { outline: none; box-shadow: none; border-color: var(--accent); }
 .switch:focus-within .slider { outline: none; box-shadow: none; border-color: color-mix(in oklab, var(--accent) 42%, var(--btn-border)); }
