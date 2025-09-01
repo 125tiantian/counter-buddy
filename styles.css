@@ -65,9 +65,12 @@
 }
 /* Make mint theme tonal buttons slightly stronger for better contrast */
 [data-theme="mint"] button.tonal {
-  background: color-mix(in oklab, var(--accent) 22%, transparent);
-  border-color: color-mix(in oklab, var(--accent) 48%, var(--btn-border));
-  color: color-mix(in oklab, var(--accent) 92%, var(--text));
+  /* Fallbacks for older browsers */
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--btn-border));
+  color: color-mix(in srgb, var(--accent) 92%, var(--text));
 }
 [data-theme="sky"] {
   --accent: #60a5fa;
@@ -99,11 +102,11 @@ body::before, body::after {
 }
 body::before {
   right: -160px; top: -160px;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent) 60%, transparent), transparent 70%);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 60%, transparent), transparent 70%);
 }
 body::after {
   left: -180px; bottom: -180px;
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--accent-2) 60%, transparent), transparent 70%);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent-2) 60%, transparent), transparent 70%);
 }
 
 .panel {
@@ -157,14 +160,14 @@ body::after {
 .panel-header::before {
   content: '';
   position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(120% 60% at 100% 0%, color-mix(in oklab, var(--accent) 8%, transparent), transparent 60%);
+  background: radial-gradient(120% 60% at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 60%);
   opacity: .6;
 }
 /* Accent underline */
 .panel-header::after {
   content: '';
   position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 85%, transparent), color-mix(in srgb, var(--accent-2) 85%, transparent));
   opacity: .65;
 }
 .title { font-weight: 600; }
@@ -233,8 +236,8 @@ textarea {
   will-change: transform;
   backface-visibility: hidden;
 }
-@supports (background: color-mix(in oklab, #fff 10%, transparent)) {
-  .card { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 10%, transparent); }
+@supports (background: color-mix(in srgb, #fff 10%, transparent)) {
+  .card { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); }
 }
 
 /* Archived card state: subtly muted */
@@ -242,13 +245,19 @@ textarea {
   opacity: .78;
   filter: saturate(.75);
 }
-.card.archived .name { color: color-mix(in oklab, var(--muted) 30%, var(--text)); }
+.card.archived .name { color: color-mix(in srgb, var(--muted) 30%, var(--text)); }
+
+/* Keep enter动画，但归档卡片应以目标不透明度结束，避免先亮后灰 */
 
 @media (hover: hover) {
-  .card:hover { box-shadow: var(--shadow-1); border-color: color-mix(in oklab, var(--accent) 35%, var(--border)); }
+  .card:hover { box-shadow: var(--shadow-1); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 }
 .card.enter { animation: card-appear .32s cubic-bezier(.2,.7,.2,1); }
 @keyframes card-appear { from { opacity: 0; transform: translateY(6px) scale(.98);} to { opacity: 1; transform: translateY(0) scale(1);} }
+
+/* Archived cards use an enter that settles at archived opacity (0.78) */
+.card.archived.enter { animation-name: card-appear-archived; }
+@keyframes card-appear-archived { from { opacity: 0; transform: translateY(6px) scale(.98);} to { opacity: .78; transform: translateY(0) scale(1);} }
 
 /* graceful leave animation for removal */
 .card.leaving { overflow: hidden; opacity: 0; transform: translateY(8px) scale(.98); transition: height .22s ease, margin .22s ease, padding .22s ease, opacity .18s ease, transform .18s ease, border-color .2s ease, box-shadow .2s ease; }
@@ -335,7 +344,7 @@ button {
     filter: brightness(1.08);
     transform: translateY(-1.2px);
     /* Stronger, colored shadow without outer halo */
-    box-shadow: 0 8px 18px color-mix(in oklab, var(--accent) 50%, transparent), 0 6px 16px rgba(0,0,0,.16);
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 50%, transparent), 0 6px 16px rgba(0,0,0,.16);
   }
 }
 button:not(:disabled):active { transform: translateY(1px); }
@@ -352,9 +361,11 @@ button:disabled { opacity: .6; cursor: not-allowed; filter: none; transform: non
 
 /* Button variants */
 button.ghost { background: transparent; border-color: var(--border); }
-button.tonal { background: color-mix(in oklab, var(--accent) 14%, transparent); border-color: color-mix(in oklab, var(--accent) 35%, var(--btn-border)); color: var(--accent); }
+/* Fallback border ensures theme color even if color-mix unsupported */
+button.tonal { border-color: var(--accent); color: var(--accent); }
+button.tonal { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, var(--btn-border)); color: var(--accent); }
 button.round { border-radius: 999px; }
-.actions .btn-plus { font-weight: 800; box-shadow: 0 6px 14px color-mix(in oklab, var(--accent) 35%, transparent); will-change: transform, filter; transform: translateZ(0); backface-visibility: hidden; }
+.actions .btn-plus { font-weight: 800; box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 35%, transparent); will-change: transform, filter; transform: translateZ(0); backface-visibility: hidden; }
 .actions .btn-minus { min-width: 0; }
 
 /* Primary + button: remove outer glow on hover (avoid white halo) */
@@ -370,10 +381,10 @@ button.round { border-radius: 999px; }
 
 /* Range (opacity) theming */
 input[type=range] { -webkit-appearance: none; appearance: none; height: 24px; background: transparent; }
-input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 30%, var(--btn)), color-mix(in oklab, var(--accent-2) 30%, var(--btn))); }
-input[type=range]::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 30%, var(--btn)), color-mix(in oklab, var(--accent-2) 30%, var(--btn))); }
-input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 50%, transparent); margin-top: -5px; }
-input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 2px 8px color-mix(in oklab, var(--accent) 50%, transparent); }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, var(--btn)), color-mix(in srgb, var(--accent-2) 30%, var(--btn))); }
+input[type=range]::-moz-range-track { height: 4px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, var(--btn)), color-mix(in srgb, var(--accent-2) 30%, var(--btn))); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 50%, transparent); margin-top: -5px; }
+input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 1px solid rgba(255,255,255,0.3); box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 50%, transparent); }
 
 .import-label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 
@@ -388,7 +399,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .modal::backdrop { background: rgba(0,0,0,0.55); opacity: 0; transition: opacity .18s ease; }
 .modal[open].show::backdrop { opacity: 1; }
 .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: var(--panel-2); border-top-left-radius: 12px; border-top-right-radius: 12px; position: relative; }
-.modal-header::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent)); opacity:.5; }
+.modal-header::after { content:''; position:absolute; left:0; right:0; bottom:-1px; height:2px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 85%, transparent), color-mix(in srgb, var(--accent-2) 85%, transparent)); opacity:.5; }
 .modal-body { padding: 10px 12px 16px 12px; max-height: 65vh; overflow: auto; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 .modal-body hr.section-sep { border: 0; border-top: 1px solid var(--divider); margin: 8px 0 10px 0; }
 .modal-title { font-weight: 600; }
@@ -419,7 +430,7 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 .switch .slider { position: absolute; inset: 0; background: var(--btn); border: 1px solid var(--btn-border); border-radius: 999px; transition: background .18s ease, border-color .18s ease; cursor: pointer; }
 .switch .slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; border-radius: 50%; background: var(--text); transition: transform .18s ease, background .18s ease; }
-.switch input:checked + .slider { background: color-mix(in oklab, var(--accent) 35%, transparent); border-color: color-mix(in oklab, var(--accent) 60%, var(--btn-border)); }
+.switch input:checked + .slider { background: color-mix(in srgb, var(--accent) 35%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, var(--btn-border)); }
 .switch input:checked + .slider::before { transform: translateX(20px); background: #fff; }
 
 /* 高级设置（折叠） */
@@ -440,7 +451,7 @@ details.advanced .modal-actions { animation: adv-reveal .22s cubic-bezier(.2,.7,
 #sync-dialog input::placeholder,
 #rename-input::placeholder,
 .note-edit input::placeholder,
-.note-quick .note-input::placeholder { color: color-mix(in oklab, var(--muted) 88%, transparent); opacity: .9; }
+.note-quick .note-input::placeholder { color: color-mix(in srgb, var(--muted) 88%, transparent); opacity: .9; }
 
 /* 高级设置：使用主题色的 plus/minus 指示（去掉三角） */
 details.advanced > summary { padding-left: 22px; }
@@ -452,7 +463,7 @@ details.advanced > summary::before {
   top: 50%;
   width: 12px;
   height: 2px;
-  background: linear-gradient(90deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 85%, transparent), color-mix(in srgb, var(--accent-2) 85%, transparent));
   border-radius: 2px;
   transform: translateY(-50%);
 }
@@ -464,7 +475,7 @@ details.advanced > summary::after {
   top: 50%;
   width: 2px;
   height: 12px;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--accent) 85%, transparent), color-mix(in oklab, var(--accent-2) 85%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 85%, transparent), color-mix(in srgb, var(--accent-2) 85%, transparent));
   border-radius: 2px;
   transform: translateY(-50%);
   transition: transform .22s ease, opacity .2s ease;
@@ -552,10 +563,10 @@ details.advanced .adv-content { transition: grid-template-rows .24s cubic-bezier
 #history-meta .history-current .value.flip { animation: badge-flip .3s cubic-bezier(.2,.7,.2,1); transform-origin: 50% 60%; will-change: transform; }
 .pill { display: inline-flex; align-items: center; justify-content: center; height: 28px; font-size: 13px; font-weight: 700; padding: 0 10px; border-radius: 999px; line-height: 1; }
 /* +1 badge follows current theme accent */
-.pill.add { background: color-mix(in oklab, var(--accent) 22%, transparent); color: var(--accent); }
+.pill.add { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
 .pill.sub { background: rgba(245,165,36,0.2); color: var(--warning); }
 /* note/record badge uses theme accent too */
-.pill.note { background: color-mix(in oklab, var(--accent) 18%, transparent); color: var(--accent); }
+.pill.note { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
 
 /* History header meta: name + current value, clearer separation */
 #history-meta {
@@ -620,9 +631,9 @@ details.advanced .adv-content { transition: grid-template-rows .24s cubic-bezier
 .popover .item.danger { color: #fff; background: var(--danger); border-top: 1px solid rgba(0,0,0,0.1); }
 @media (hover: hover) {
   /* Only non-danger items get the accent hover */
-  .popover .item:not(.danger):hover { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+  .popover .item:not(.danger):hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
   /* Danger item: clearly darker on hover for stronger affordance */
-  .popover .item.danger:hover { background: color-mix(in oklab, var(--danger) 82%, black); }
+  .popover .item.danger:hover { background: color-mix(in srgb, var(--danger) 82%, black); }
 }
 
 /* Quick note content inside popover */
@@ -648,8 +659,8 @@ button:focus { outline: none; }
 .card:focus { outline: none; }
 /* Fallback 优先：不支持 color-mix/oklab 的浏览器使用主题色 */
 button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* 支持 color-mix 的浏览器用更柔和的主题混合色 */
-button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid color-mix(in oklab, var(--accent) 60%, transparent); outline-offset: 2px; }
+/* 支持 color-mix 的浏览器用更柔和的主题混合色（srgb 兼容更好） */
+button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px; }
 /* 备注输入框：获得焦点时取消外轮廓，改为加粗边框，避免双层描边 */
 .note-quick .note-input:focus,
 .note-quick .note-input:focus-visible {
@@ -657,7 +668,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
   box-shadow: none;
   /* Fallback: theme accent when color-mix unsupported */
   border-color: var(--accent);
-  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* 边框变粗时缩小内边距以保持尺寸稳定 */
 }
@@ -683,7 +694,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
   outline: none !important;
   box-shadow: none;
   border-color: var(--accent); /* Fallback for older browsers */
-  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* keep size stable when border grows */
 }
@@ -694,7 +705,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
   outline: none !important;
   box-shadow: none;
   border-color: var(--accent); /* Fallback */
-  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 7px 9px; /* 原 8px 10px，边框变粗后保持整体尺寸 */
 }
@@ -705,7 +716,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
   outline: none !important;
   box-shadow: none;
   border-color: var(--accent); /* Fallback */
-  border-color: color-mix(in oklab, var(--accent) 42%, var(--input-border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--input-border));
   border-width: 2px;
   padding: 5px 7px; /* 原 6px 8px，保持尺寸 */
 }
@@ -759,7 +770,7 @@ button:focus-visible, .card:focus-visible, input:focus-visible { outline: 2px so
 /* 触屏“按压效果”：与 hover 视觉一致，但只在按压期间短暂出现 */
 button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1px) !important; box-shadow: 0 6px 14px rgba(0,0,0,.18) !important; }
 /* 强化 +1/-1 的按压反馈（移动端更明显） */
-.actions .btn-plus.tap-flash { transform: translateY(-1px) scale(1.04) !important; filter: brightness(1.08) !important; box-shadow: 0 10px 22px color-mix(in oklab, var(--accent) 55%, transparent), 0 6px 16px rgba(0,0,0,.18) !important; }
+.actions .btn-plus.tap-flash { transform: translateY(-1px) scale(1.04) !important; filter: brightness(1.08) !important; box-shadow: 0 10px 22px color-mix(in srgb, var(--accent) 55%, transparent), 0 6px 16px rgba(0,0,0,.18) !important; }
 .actions .btn-minus.tap-flash { transform: translateY(-1px) scale(1.02) !important; filter: brightness(1.06) !important; }
 
 .history-note { margin-left: 8px; font-size: 12px; color: var(--muted); }
@@ -778,9 +789,9 @@ button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1
 
 /* Scrollbar styling */
 .counters::-webkit-scrollbar { width: 10px; }
-.counters::-webkit-scrollbar-thumb { background: color-mix(in oklab, var(--accent) 20%, var(--btn)); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+.counters::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--accent) 20%, var(--btn)); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
 .counters::-webkit-scrollbar-track { background: transparent; }
-.counters { scrollbar-color: color-mix(in oklab, var(--accent) 30%, var(--btn)) transparent; scrollbar-width: thin; }
+.counters { scrollbar-color: color-mix(in srgb, var(--accent) 30%, var(--btn)) transparent; scrollbar-width: thin; }
 
 @media (prefers-reduced-motion: reduce) {
   /* Keep button/tap feedback and menu state visuals.
@@ -826,8 +837,8 @@ button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1
 /* Placeholder spacer for pointer-based DnD */
 .card-placeholder {
   border-radius: 10px;
-  border: 2px dashed color-mix(in oklab, var(--accent) 85%, transparent);
-  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border: 2px dashed color-mix(in srgb, var(--accent) 85%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
   transition: background .12s ease, opacity .12s ease;
   /* Always occupy full width and fixed height in flex column */
   width: 100%;
@@ -878,7 +889,7 @@ button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1
   line-height: inherit;
 }
 @media (hover: hover) {
-  .app-footer a:hover, .app-footer .footer-link:hover { color: var(--text); border-bottom-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+  .app-footer a:hover, .app-footer .footer-link:hover { color: var(--text); border-bottom-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 }
 @media (max-width: 420px) {
   .app-footer { gap: 6px; }
@@ -909,12 +920,12 @@ button.tap-flash { filter: brightness(1.06) !important; transform: translateY(-1
 
 /* 自动同步开关：hover/聚焦反馈（仅桌面 hover 环境启用） */
 @media (hover: hover) {
-  .switch:hover .slider { background: color-mix(in oklab, var(--accent) 12%, var(--btn)); border-color: color-mix(in oklab, var(--accent) 28%, var(--btn-border)); }
-  .switch:hover input:checked + .slider { background: color-mix(in oklab, var(--accent) 45%, transparent); border-color: color-mix(in oklab, var(--accent) 70%, var(--btn-border)); }
+  .switch:hover .slider { background: color-mix(in srgb, var(--accent) 12%, var(--btn)); border-color: color-mix(in srgb, var(--accent) 28%, var(--btn-border)); }
+  .switch:hover input:checked + .slider { background: color-mix(in srgb, var(--accent) 45%, transparent); border-color: color-mix(in srgb, var(--accent) 70%, var(--btn-border)); }
   .switch:hover input:not(:checked) + .slider::before { transform: translateX(0) scale(1.06); }
   .switch:hover input:checked + .slider::before { transform: translateX(20px) scale(1.06); }
 }
 /* 键盘聚焦：统一为输入框风格（仅改变边框颜色，不加外层描边） */
 /* Fallback first, then enhanced color for capable browsers */
 .switch:focus-within .slider { outline: none; box-shadow: none; border-color: var(--accent); }
-.switch:focus-within .slider { outline: none; box-shadow: none; border-color: color-mix(in oklab, var(--accent) 42%, var(--btn-border)); }
+.switch:focus-within .slider { outline: none; box-shadow: none; border-color: color-mix(in srgb, var(--accent) 42%, var(--btn-border)); }

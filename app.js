@@ -318,7 +318,8 @@ async function pullFromJsonBin() {
 // 流程：
 // 1) 读取云端最新；若 404（不存在）可提示直接上传本地以创建。
 // 2) 将本地与云端按 id 合并：
-//    - 同 id：以 updatedAt 较新的为“基准”，名称/计数取基准；历史做去重合并（按 ts+delta+note 作为键），按时间倒序。
+//    - 同 id：以 updatedAt 较新的为“基准”，名称/计数取基准；
+//      历史按“时间戳 ts 为唯一键”去重合并：同一 ts 若两端内容不同，采用“基准侧”的项覆盖；结果按时间倒序。
 //      createdAt 取较早者；updatedAt 取较晚者。
 //    - 仅一侧存在：直接保留。
 //    - ui：以本地为准（主题/布局属于设备偏好）。
@@ -409,21 +410,26 @@ function mergeStates(local, remote, opts = {}) {
     }
     const base = lt >= rt ? lc : rc;
     const other = lt >= rt ? rc : lc;
-    // 历史合并去重（注意：撤销/减一不会记录历史，这里不回放历史，只做简单合并）
-    const seen = new Set();
-    const hist = [];
+    // 历史合并去重：以 ts 为唯一键；基准侧优先覆盖
     const cid = lc.id;
-    const pushHist = (h) => {
-      try {
-        // 若该历史记录有删除墓碑，则跳过
-        const tomb = hTMap.get(keyOf(cid, h.ts));
-        if (tomb) return;
-        const key = `${h.ts}|${h.delta}|${h.note || ''}`;
-        if (!seen.has(key)) { seen.add(key); hist.push({ ts: h.ts, delta: h.delta, note: h.note || '' }); }
-      } catch {}
+    const histByTs = new Map();
+    const pushList = (list) => {
+      const arr = Array.isArray(list) ? list : [];
+      for (const h of arr) {
+        try {
+          // Tombstone for this (counterId, ts) wins: skip
+          if (hTMap.get(keyOf(cid, h.ts))) continue;
+          // First writer wins per pass order; since我们先推入“基准侧”，其值将保留
+          if (!histByTs.has(h.ts)) {
+            histByTs.set(h.ts, { ts: h.ts, delta: h.delta, note: h.note || '' });
+          }
+        } catch {}
+      }
     };
-    (Array.isArray(lc.history) ? lc.history : []).forEach(pushHist);
-    (Array.isArray(rc.history) ? rc.history : []).forEach(pushHist);
+    // 先基准侧，再另一侧（保证同 ts 时以基准侧为准）
+    pushList(base.history);
+    pushList(other.history);
+    const hist = Array.from(histByTs.values());
     // 时间倒序
     hist.sort((a, b) => (Date.parse(b.ts || 0) || 0) - (Date.parse(a.ts || 0) || 0));
     // 按合并后的历史重算计数（仅统计正增量），避免删除历史后计数被远端较大值“拉回”
@@ -815,7 +821,7 @@ function showPopoverForCounter(counter, anchorRect) {
   if (!counter.archived) {
     elp.appendChild(mk('重命名', '', () => openRename(counter.id, counter.name)));
   }
-  // Touch-friendly reorder options as DnD fallback
+  // Touch-friendly reorder options作为 DnD 的回退
   if (isTouchDevice() && !counter.archived) {
     elp.appendChild(mk('上移', '', () => moveCounterById(counter.id, -1)));
     elp.appendChild(mk('下移', '', () => moveCounterById(counter.id, +1)));
@@ -1231,21 +1237,13 @@ function toggleArchivedViewAnimated() {
       const onEnd = () => {
         try { card.removeEventListener('transitionend', onEnd); } catch {}
         if (--remaining === 0) {
-          try { state.ui.showArchived = !state.ui.showArchived; save(); render(); } catch {}
-          try {
-            // 进入动画：为新列表卡片添加 enter 动画
-            const news = Array.from(document.querySelectorAll('#counters .card'));
-            news.forEach((n, j) => {
-              n.classList.add('enter');
-              setTimeout(() => { try { n.classList.remove('enter'); } catch {} }, 320 + j * 5);
-            });
-          } catch {}
+          finishSwitch();
         }
       };
       card.addEventListener('transitionend', onEnd);
       setTimeout(onEnd, 340 + i * 8);
     } catch {
-      if (--remaining === 0) { try { state.ui.showArchived = !state.ui.showArchived; save(); render(); } catch {} }
+      if (--remaining === 0) finishSwitch();
     }
   });
 }
@@ -1714,38 +1712,41 @@ function setupDnD() {
     } catch {}
     if (e.button !== 0) return;
     if (e.target && e.target.closest && e.target.closest('button, input, label, select, textarea')) return;
-    e.preventDefault();
-    try { card.setPointerCapture && card.setPointerCapture(e.pointerId); } catch {}
-    const srcIdx = state.counters.findIndex((x) => x.id === card.dataset.id);
-    if (srcIdx < 0) return;
-    dragId = card.dataset.id;
-    const cardRect = card.getBoundingClientRect();
-    const contRect = container.getBoundingClientRect();
-    const offsetY = e.clientY - cardRect.top;
-    lastClientY = e.clientY;
-    document.body.classList.add('dragging-global');
-    document.body.style.userSelect = 'none';
+    // 将实际的“开始拖动”逻辑封装
+    const startDrag = (ev) => {
+      try { card.setPointerCapture && card.setPointerCapture(ev.pointerId); } catch {}
+      const srcIdx = state.counters.findIndex((x) => x.id === card.dataset.id);
+      if (srcIdx < 0) return;
+      dragId = card.dataset.id;
+      const cardRect = card.getBoundingClientRect();
+      const contRect = container.getBoundingClientRect();
+      const offsetY = ev.clientY - cardRect.top;
+      lastClientY = ev.clientY;
+      document.body.classList.add('dragging-global');
+      document.body.style.userSelect = 'none';
+      try { container.style.touchAction = 'none'; } catch {}
+      try { hidePopover(); } catch {}
 
-    // 先测量，再同时把卡片从文档流拿起并插入占位，统一做一次 FLIP，避免两次跳变
-    const prevMapOnPickup = measureTops();
-    // 浮动原卡片（先脱离文档流）
-    card.classList.add('dragging');
-    const prev = { position: card.style.position, left: card.style.left, top: card.style.top, width: card.style.width, zIndex: card.style.zIndex, pointerEvents: card.style.pointerEvents };
-    card.__prevStyle = prev;
-    card.style.position = 'fixed';
-    card.style.left = cardRect.left + 'px';
-    card.style.top = (e.clientY - offsetY) + 'px';
-    card.style.width = cardRect.width + 'px';
-    card.style.zIndex = '1001';
-    card.style.pointerEvents = 'none';
-    // 占位器：保持文档流
-    const ph = document.createElement('div');
-    ph.style.height = cardRect.height + 'px';
-    ph.style.margin = getComputedStyle(card).margin;
-    ph.className = 'card-placeholder';
-    card.parentNode.insertBefore(ph, card);
-    // 插占位+卡片脱流 后量一次，触发其它卡片的 FLIP 动画以体现“补位”
-    applyFlipMaps(prevMapOnPickup, measureTops());
+      // 先测量，再同时把卡片从文档流拿起并插入占位，统一做一次 FLIP，避免两次跳变
+      const prevMapOnPickup = measureTops();
+      // 浮动原卡片（先脱离文档流）
+      card.classList.add('dragging');
+      const prev = { position: card.style.position, left: card.style.left, top: card.style.top, width: card.style.width, zIndex: card.style.zIndex, pointerEvents: card.style.pointerEvents };
+      card.__prevStyle = prev;
+      card.style.position = 'fixed';
+      card.style.left = cardRect.left + 'px';
+      card.style.top = (ev.clientY - offsetY) + 'px';
+      card.style.width = cardRect.width + 'px';
+      card.style.zIndex = '1001';
+      card.style.pointerEvents = 'none';
+      // 占位器：保持文档流
+      const ph = document.createElement('div');
+      ph.style.height = cardRect.height + 'px';
+      ph.style.margin = getComputedStyle(card).margin;
+      ph.className = 'card-placeholder';
+      card.parentNode.insertBefore(ph, card);
+      // 插占位+卡片脱流 后量一次，触发其它卡片的 FLIP 动画以体现“补位”
+      applyFlipMaps(prevMapOnPickup, measureTops());
 
     // 用于节流：仅当占位符的索引变化时才进行 FLIP
     let lastPhIndex = Array.from(container.children).indexOf(ph);
@@ -1754,10 +1755,10 @@ function setupDnD() {
     card.style.transition = 'transform .14s ease, box-shadow .14s ease';
     try { card.style.transform = 'translateY(-2px) scale(1.01)'; } catch {}
 
-    const onMove = (ev) => {
-      lastClientY = ev.clientY || lastClientY;
-      card.style.top = (ev.clientY - offsetY) + 'px';
-      startAutoScroll();
+      const onMove = (ev) => {
+        lastClientY = ev.clientY || lastClientY;
+        card.style.top = (ev.clientY - offsetY) + 'px';
+        startAutoScroll();
       // 判断插入位置
       const contentY = container.scrollTop + (ev.clientY - contRect.top);
       const siblings = Array.from(container.querySelectorAll('.card')).filter(n => n !== card);
@@ -1779,13 +1780,13 @@ function setupDnD() {
         lastPhIndex = Array.from(container.children).indexOf(ph);
         applyFlipMaps(prevMap, measureTops());
       }
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove, true);
-      window.removeEventListener('pointerup', onUp, true);
-      stopAutoScroll();
-      document.body.classList.remove('dragging-global');
-      document.body.style.userSelect = '';
+      };
+      const endDrag = () => {
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', endDrag, true);
+        stopAutoScroll();
+        document.body.classList.remove('dragging-global');
+        document.body.style.userSelect = '';
       // 计算目标索引
       const src = state.counters.findIndex((x) => x.id === dragId);
       let dstIdxBase = state.counters.length;
@@ -1819,6 +1820,7 @@ function setupDnD() {
         card.style.pointerEvents = s.pointerEvents || '';
         card.style.transition = '';
         card.style.transform = '';
+        try { card.style.touchAction = ''; } catch {}
         card.classList.remove('dragging');
         try { ph.parentNode && ph.parentNode.removeChild(ph); } catch {}
         dragId = null;
@@ -1838,12 +1840,17 @@ function setupDnD() {
         try { card.removeEventListener('transitionend', onSlideEnd, true); } catch {}
         if (src >= 0 && dst >= 0 && src !== dst) cleanupMove(); else cleanupNoMove();
       };
-      try { card.addEventListener('transitionend', onSlideEnd, true); } catch {}
-      setTimeout(onSlideEnd, 220);
+        try { card.addEventListener('transitionend', onSlideEnd, true); } catch {}
+        setTimeout(onSlideEnd, 220);
+      };
+
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup', endDrag, true);
     };
 
-    window.addEventListener('pointermove', onMove, true);
-    window.addEventListener('pointerup', onUp, true);
+    // 桌面：立即开始
+    e.preventDefault();
+    startDrag(e);
   };
 
   cards.forEach((card) => {
@@ -3151,13 +3158,15 @@ function showGlobalMenu(anchorRect) {
     if (inp) inp.click();
   }));
   elp.appendChild(mk('导出 JSON', '', () => exportJSON()));
-  // 仅保留“同步设置…”，减少普通用户的选择负担
+  // 仅保留“同步设置…”等常用项
   elp.appendChild(mk('同步设置…', '', () => {
     try {
       const dlg = el('#sync-dialog');
       if (dlg) openSyncDialog();
     } catch {}
   }));
+
+  //（已移除触屏拖动排序切换项）
 
   const vw = window.innerWidth, vh = window.innerHeight;
   elp.style.left = '0px'; elp.style.top = '0px';
