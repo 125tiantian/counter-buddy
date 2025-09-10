@@ -403,6 +403,41 @@ input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 
 .modal-body { padding: 10px 12px 16px 12px; max-height: 65vh; overflow: auto; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 .modal-body hr.section-sep { border: 0; border-top: 1px solid var(--divider); margin: 8px 0 10px 0; }
 .modal-title { font-weight: 600; }
+/* Help dialog readability tweaks (scoped) */
+#help-dialog .modal-body p { margin: 8px 0; line-height: 1.65; }
+#help-dialog .modal-body ul, 
+#help-dialog .modal-body ol { margin: 6px 0 10px 0; padding-left: 18px; }
+#help-dialog .modal-body li { margin: 3px 0; }
+#help-dialog .modal-body pre { font-size: 12px; line-height: 1.45; position: relative; }
+#help-dialog .modal-body pre .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  border-radius: 6px;
+}
+#help-dialog details.advanced { margin-top: 6px; }
+/* remove old code-actions layout (no longer used) */
+/* Subtle fade+slide for help dialog collapsibles */
+#help-dialog details.advanced .adv-content > * { opacity: 0; transform: translateY(-4px); transition: opacity .24s ease, transform .28s cubic-bezier(.2,.7,.2,1); }
+#help-dialog details.advanced[open] .adv-content > * { opacity: 1; transform: none; }
+/* Card-like sections for clearer separation */
+#help-dialog .help-section {
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+  border: 1px solid var(--divider);
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin: 10px 0 12px 0;
+}
+#help-dialog .section-title {
+  margin: 0 0 6px 0;
+  font-weight: 600;
+  line-height: 1.4;
+}
+#help-dialog .help-section details.advanced > summary { padding: 6px 0 6px 22px; }
 .modal-actions {
   display: flex !important;
   flex-direction: row !important;

@@ -117,8 +117,6 @@
           <footer class="app-footer" aria-label="网站底部信息">
             <span id="footer-copy">© <span id="footer-year"></span> 计数伴侣 made by 尘</span>
             <span class="sep">·</span>
-            <button type="button" id="footer-privacy" class="footer-link">隐私</button>
-            <span class="sep">·</span>
             <button type="button" id="footer-help" class="footer-link">帮助</button>
           </footer>
         </div>
@@ -180,22 +178,7 @@
       </div>
     </dialog>
 
-    <!-- Privacy dialog -->
-    <dialog id="privacy-dialog" class="modal">
-      <div class="modal-header">
-        <div class="modal-title">隐私说明</div>
-        <button id="privacy-close">关闭</button>
-      </div>
-      <div class="modal-body">
-        <p>本应用默认将计数数据仅存储在您的浏览器本地（localStorage），不会上传到我们的服务器。</p>
-        <p>如启用云同步（JSONBin），数据会由您的浏览器直接与 JSONBin API 通信；<strong>Bin ID</strong> 与 <strong>API Key</strong> 仅保存在本机的 localStorage 中，用于访问您自己的 Bin。我们不会收集或存储您的数据或密钥。</p>
-        <ul>
-          <li>可随时在“同步设置 → 高级设置”中点击“解除绑定”，仅清除本机保存的 Bin ID 与 API Key，不会删除 JSONBin 上的数据。</li>
-          <li>离线时应用仍可使用；网络恢复后会根据设置自动重试同步。</li>
-          <li>您可随时使用右上角“清空”按钮删除所有本地数据。</li>
-        </ul>
-      </div>
-    </dialog>
+    <!-- Privacy dialog removed; content merged into Help -->
 
     <!-- Sync settings dialog -->
     <dialog id="sync-dialog" class="modal">
@@ -247,74 +230,118 @@
     <!-- Help dialog -->
     <dialog id="help-dialog" class="modal">
       <div class="modal-header">
-        <div class="modal-title">使用帮助</div>
+        <div class="modal-title">欢迎使用 · 计数伴侣</div>
         <button id="help-close">关闭</button>
       </div>
       <div class="modal-body">
-        <p><strong>项目仓库</strong>：<a href="https://github.com/125tiantian/counter-buddy" target="_blank" rel="noopener noreferrer">github.com/125tiantian/counter-buddy</a></p>
-        <p><strong>快速上手</strong></p>
-        <ul>
-          <li>点击 <span class="kbd">+1</span> 增加当前计数。</li>
-          <li>长按 <span class="kbd">+1</span>，或按住 <span class="kbd">Shift</span> 再点 <span class="kbd">+1</span>，可为这次 +1 添加备注。</li>
-          <li>点击 <span class="kbd">记</span>（快速记录）只添加一条“记录”备注，不改变计数。</li>
-          <li>右上角云图标：点击手动进行云同步；悬停（PC）或长按（触屏）查看同步状态。</li>
-          <li>首次使用云同步：在“同步设置”里填入 <em>Bin ID</em> 与 <em>X-Master-Key</em> 后保存（见下文指南）。</li>
-        </ul>
+        <p class="muted"><strong>项目仓库</strong>：
+          <a href="https://github.com/125tiantian/counter-buddy" target="_blank" rel="noopener noreferrer">github.com/125tiantian/counter-buddy</a>
+        </p>
+        <hr class="section-sep" />
 
-        <p><strong>云同步（JSONBin）</strong></p>
-        <ul>
-          <li><strong>方法介绍</strong>：
-            <ol>
-              <li>打开 <a href="https://jsonbin.io/create-account" target="_blank" rel="noopener noreferrer">jsonbin.io</a> 注册并登录。</li>
-              <li>左侧进入 <em>Bins</em>，点击 <em>Create a Bin</em>。</li>
-              <li>在输入框粘贴以下默认 JSON（可直接复制）：
-                <pre style="background: var(--surface); border: 1px solid var(--input-border); padding: 8px; border-radius: 8px; white-space: pre; overflow: auto;">{
+        <section class="help-section" id="help-what">
+          <h3 class="section-title">这是什么</h3>
+          <p>计数伴侣是一个轻量、可离线的多计数器工具。
+            用简单的 <span class="kbd">+1</span> 记录反复发生的事情，并用 <span class="kbd">记</span> 写下原因或备注。
+            无账号、默认本地保存，支持可选云同步。</p>
+        </section>
+
+        <section class="help-section" id="help-scenes">
+          <h3 class="section-title">常见场景</h3>
+          <ul>
+            <li>习惯打卡（学习、健身、喝水）与进度记录</li>
+            <li>事件统计（bug、胜场、跑步次数）</li>
+            <li>里程碑与原因记录（用 <span class="kbd">记</span> 不加一）</li>
+          </ul>
+        </section>
+
+        <section class="help-section" id="help-basics">
+          <h3 class="section-title">基础功能</h3>
+          <ul>
+            <li>点 <span class="kbd">+ 新建计数器</span> 创建新计数器；点击卡片上的 <span class="kbd">+1</span> 增加计数。</li>
+            <li>为这次 <span class="kbd">+1</span> 添加备注：长按 <span class="kbd">+1</span>，或按住 <span class="kbd">Shift</span> 再点。</li>
+            <li><span class="kbd">记</span>：只添加一条“记录”备注，不改变总数，适合写原因/里程碑。</li>
+            <li>历史：为每次 <span class="kbd">+1</span>/记录 添加或编辑备注；删除 <span class="kbd">+1</span> 会回退计数，“记录”删除不改变计数。</li>
+            <li>管理：重命名、排序（拖动/更多中上移下移置顶置底）、重置/删除、归档/取消归档。</li>
+            <li>导入/导出：右上角“更多”可导入/导出 JSON；支持安装为应用（PWA）。</li>
+          </ul>
+        </section>
+
+        <section class="help-section" id="help-sync">
+          <details class="advanced">
+            <summary>云同步（可选）：多设备与备份</summary>
+            <div class="adv-content">
+              <div>
+                <ul>
+                  <li><strong>用途</strong>：在多设备之间合并同步；换手机/清缓存后快速恢复；作为在线备份。</li>
+                  <li><strong>工作方式</strong>：点击右上角云图标手动“合并同步”；也可在“同步设置”里开启自动同步。</li>
+                </ul>
+                <p><strong>方法介绍（JSONBin）</strong></p>
+                <ol>
+                  <li>访问 <a href="https://jsonbin.io/create-account" target="_blank" rel="noopener noreferrer">jsonbin.io</a> 注册并登录。</li>
+                  <li>左侧进入 <em>Bins</em> → 点击 <em>Create a Bin</em>。</li>
+                  <li>在输入框粘贴下方默认 JSON（可直接复制）。</li>
+                  <li>点击 <em>Save Bin</em> 保存。</li>
+                  <li>左侧复制该 Bin 的 <strong>Bin ID</strong>。</li>
+                  <li>左侧进入 <em>API Keys</em>，复制 <strong>X‑Master‑Key</strong>。</li>
+                  <li>回到应用“同步设置”，粘贴 <em>Bin ID</em> 与 <em>X‑Master‑Key</em> 并保存。</li>
+                </ol>
+                <div class="muted" style="margin: 6px 0 4px;">默认 JSON（点击右上角复制按钮）：</div>
+                <pre id="jsonbin-default" style="position: relative; background: var(--surface); border: 1px solid var(--input-border); padding: 8px 72px 8px 8px; border-radius: 8px; white-space: pre; overflow: auto;">
+<button id="copy-default-json" type="button" class="ghost copy-btn">复制</button>{
   "counters": [],
   "ui": { "panel": { "x": null, "y": null, "w": null, "h": null }, "theme": "pink" }
-}</pre>
-              </li>
-              <li>点击 <em>Save Bin</em> 保存。</li>
-              <li>在左侧复制该 Bin 的 <strong>Bin ID</strong>。</li>
-              <li>左侧进入 <em>API Keys</em>，复制 <strong>X-Master-Key</strong>。</li>
-              <li>回到应用“同步设置”，分别粘贴 <em>Bin ID</em> 与 <em>X-Master-Key</em>，保存即可。</li>
-            </ol>
-          </li>
-          <li><strong>功能介绍</strong>：点击右上角云图标可手动“合并同步”（读取云端 → 合并 → 条件写回）；可在设置中开启“自动同步”。</li>
-          <li><strong>多设备同步</strong>：在其它设备打开本应用，填入相同的 <em>Bin ID</em> 与 <em>X-Master-Key</em> 并保存，即可合并并保持同步。</li>
-          <li><strong>按钮说明</strong>：
-            <ul>
-              <li><strong>云图标</strong>：点击手动同步；悬停/长按查看状态（同步中旋转、成功实心、失败红色、离线带斜杠）。</li>
-              <li><strong>同步设置</strong>：<em>自动同步</em> 开关、<em>保存</em>；<em>高级设置</em> 中含 <em>仅拉取（覆盖本地）</em>、<em>仅上传（覆盖云端）</em>、<em>测试连接</em>、<em>解除绑定</em>；<em>显示/隐藏 API Key</em> 用于临时查看密钥。</li>
-            </ul>
-          </li>
-        </ul>
+}
+</pre>
+                <p class="muted">提示：若在“测试连接”中出现 404，通常是 Bin 尚未创建；请先在 JSONBin 创建并保存一个 Bin。</p>
+                <p><strong>功能介绍</strong>：点击右上角云图标可手动“合并同步”（读取云端 → 合并 → 条件写回）；可在设置中开启“自动同步”。</p>
+                <p><strong>多设备同步</strong>：在其它设备打开本应用，填入相同的 <em>Bin ID</em> 与 <em>X‑Master‑Key</em> 并保存，即可合并并保持同步。</p>
+                <p><strong>按钮说明</strong>：</p>
+                <ul>
+                  <li><strong>云图标</strong>：点击手动同步；悬停/长按查看状态（同步中旋转、成功实心、失败红色、离线带斜杠）。</li>
+                  <li><strong>同步设置</strong>：<em>自动同步</em> 开关、<em>保存</em>；<em>高级设置</em> 中含 <em>仅拉取（覆盖本地）</em>、<em>仅上传（覆盖云端）</em>、<em>测试连接</em>、<em>解除绑定</em>；<em>显示/隐藏 API Key</em> 用于临时查看密钥。</li>
+                </ul>
+              </div>
+            </div>
+          </details>
+        </section>
 
-        <p><strong>记功能说明</strong></p>
-        <ul>
-          <li><strong>用途</strong>：记录一次事件/原因/里程碑，不计入总数。</li>
-          <li><strong>显示</strong>：在历史里以“记录”徽章呈现，可添加/编辑备注。</li>
-          <li><strong>删除</strong>：删除“记录”不会改变当前值。</li>
-          <li><strong>适合场景</strong>：写下为何 +1、补充上下文、仅做笔记等。</li>
-        </ul>
+        <section class="help-section" id="help-install">
+          <details class="advanced">
+            <summary>应用安装（PWA）</summary>
+            <div class="adv-content">
+              <div>
+                <ul>
+                  <li><strong>支持环境</strong>：Chrome（推荐）或 Microsoft Edge 浏览器（Edge 可在应用商店下载）。</li>
+                  <li><strong>电脑</strong>：在浏览器右上角的“三个点”菜单中，选择“保存和分享/更多工具” → “安装为应用”。</li>
+                  <li><strong>手机</strong>：在浏览器右上角的“三个点”菜单中，选择“添加到主屏幕/安装应用”。如出现权限提示，请在系统设置中为浏览器开启“安装应用”的权限。</li>
+                  <li><strong>Google Play</strong>：如果设备支持 Google Play 服务，且设备网络环境可连接 Google，在该环境下安装会以 WebAPK 形式集成到系统，体验更接近原生应用。</li>
+                </ul>
+              </div>
+            </div>
+          </details>
+        </section>
 
-        <p><strong>历史记录</strong></p>
-        <ul>
-          <li>在“历史记录”里可为每一条添加/编辑备注，或点垃圾桶删除。</li>
-          <li>删除 <span class="kbd">+1</span> 条目会回退计数；删除“记录”不会改变计数。</li>
-        </ul>
+        <section class="help-section" id="help-privacy">
+          <details class="advanced">
+            <summary>隐私与数据</summary>
+            <div class="adv-content">
+              <div>
+                <p>默认数据仅保存在你的浏览器（localStorage），不会上传到我们的服务器。</p>
+                <p>启用云同步时，浏览器会直接与 JSONBin 通信；<strong>Bin ID</strong> 与 <strong>X‑Master‑Key</strong> 仅保存在本机。我们不会收集或存储你的数据或密钥。</p>
+                <ul>
+                  <li>解除绑定：在“同步设置 → 高级设置”点击“解除绑定”，仅清除本机保存的 Bin ID 与 Key，不会删除 JSONBin 上的数据。</li>
+                  <li>离线可用：无网络也能使用；若开启自动同步，网络恢复后会自动重试。</li>
+                  <li>本地清除：右上“清空”仅删除本机数据；可随时导入/导出 JSON 做离线备份。</li>
+                </ul>
+              </div>
+            </div>
+          </details>
+        </section>
 
-        <p><strong>排序与管理</strong></p>
-        <ul>
-          <li>桌面端拖动卡片即可排序；移动端在“更多”里用 上移/下移/置顶/置底。</li>
-          <li>“更多”里可 <em>重命名</em>、<em>重置</em>（清零并清空历史）、或 <em>删除</em> 计数器。</li>
-        </ul>
+        
 
-        <p><strong>数据与安装</strong></p>
-        <ul>
-          <li>右上角“更多”可 <em>导入/导出 JSON</em>。</li>
-          <li>数据仅保存在浏览器本地，可离线使用；可在全局“清空”里一键清除。</li>
-          <li>支持安装为应用（PWA）：Chrome/Edge/Android 菜单“安装/添加到主屏幕”；iOS Safari 共享菜单“添加到主屏幕”。</li>
-        </ul>
+        <div class="muted">小提示：对话框内按 Enter 保存、Esc 取消；云同步细节与 FAQ 见仓库 README。</div>
       </div>
     </dialog>
 

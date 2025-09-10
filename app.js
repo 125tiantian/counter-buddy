@@ -3120,13 +3120,13 @@ function setupFooter() {
   if (repoEl) {
     if (repoUrl) repoEl.href = repoUrl; else repoEl.remove();
   }
-  // privacy dialog
+  // privacy dialog (removed in UI; keep guard for backward compatibility)
   const openBtn = document.querySelector('#footer-privacy');
   const closeBtn = document.querySelector('#privacy-close');
   const dlg = document.querySelector('#privacy-dialog');
   if (openBtn && dlg) openBtn.addEventListener('click', () => openModal(dlg));
   if (closeBtn && dlg) closeBtn.addEventListener('click', () => closeModal(dlg));
-  enableBackdropClose(dlg);
+  if (dlg) enableBackdropClose(dlg);
 
   // help dialog
   const helpOpen = document.querySelector('#footer-help');
@@ -3135,6 +3135,38 @@ function setupFooter() {
   if (helpOpen && helpDlg) helpOpen.addEventListener('click', () => openModal(helpDlg));
   if (helpClose && helpDlg) helpClose.addEventListener('click', () => closeModal(helpDlg));
   enableBackdropClose(helpDlg);
+
+  // Help: copy default JSON button
+  const copyBtn = document.querySelector('#copy-default-json');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      try {
+        const pre = document.querySelector('#jsonbin-default');
+        const text = (pre && pre.textContent) ? pre.textContent.trim() : '';
+        if (!text) throw new Error('no text');
+        let ok = false;
+        try { await navigator.clipboard.writeText(text); ok = true; } catch {}
+        if (!ok) {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+            document.body.removeChild(ta); ok = true;
+          } catch {}
+        }
+        if (ok) {
+          const old = copyBtn.textContent;
+          copyBtn.textContent = '已复制'; copyBtn.disabled = true;
+          setTimeout(() => { copyBtn.textContent = old; copyBtn.disabled = false; }, 1200);
+        } else {
+          try { infoDialog({ title: '提示', text: '复制失败，请手动选择文本复制。', okText: '知道了' }); } catch { alert('复制失败，请手动选择文本复制。'); }
+        }
+      } catch {
+        try { infoDialog({ title: '提示', text: '没有可复制的内容。', okText: '知道了' }); } catch { alert('没有可复制的内容。'); }
+      }
+    });
+  }
 }
 
 // Global menu popover content
