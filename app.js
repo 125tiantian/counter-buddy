@@ -676,14 +676,125 @@ function setupAutoSync() {
   __autoSyncInstalled = true;
 }
 
-function isTouchDevice() {
+let __touchModeOverride;
+let __touchModeGuess;
+
+function computeTouchModeGuess() {
   try {
-    return (
-      ('ontouchstart' in window) ||
-      (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
-    );
+    if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+    const nav = navigator;
+    const win = window;
+    const maxTouchPoints = Number(nav.maxTouchPoints || nav.msMaxTouchPoints || 0);
+    const matches = (query) => {
+      try { return !!(win.matchMedia && win.matchMedia(query).matches); }
+      catch { return false; }
+    };
+    const hasFinePointer = matches('(pointer: fine)') || matches('(any-pointer: fine)');
+    const hasCoarsePointer = matches('(pointer: coarse)') || matches('(any-pointer: coarse)');
+    const canHover = matches('(hover: hover)') || matches('(any-hover: hover)');
+    const hoverNone = matches('(hover: none)') || matches('(any-hover: none)');
+
+    if (!maxTouchPoints && !hasCoarsePointer && !hoverNone) {
+      return false;
+    }
+
+    if (hasFinePointer && canHover && !hoverNone) {
+      return false;
+    }
+
+    if (maxTouchPoints > 0) return true;
+    if (hoverNone) return true;
+    if (hasCoarsePointer && !hasFinePointer) return true;
+
+    return false;
   } catch { return false; }
+}
+
+function isTouchDevice() {
+  if (typeof __touchModeOverride === 'boolean') return __touchModeOverride;
+  if (typeof __touchModeGuess === 'boolean') return __touchModeGuess;
+  __touchModeGuess = computeTouchModeGuess();
+  return __touchModeGuess;
+}
+
+function applyTouchModeClass(enabled) {
+  try {
+    const root = document.documentElement;
+    if (!root) return;
+    if (enabled) root.classList.add('no-hover');
+    else root.classList.remove('no-hover');
+  } catch {}
+}
+
+function setupTouchDeviceDetection() {
+  applyTouchModeClass(isTouchDevice());
+
+  const setOverride = (value) => {
+    if (typeof value !== 'boolean') return;
+    if (__touchModeOverride === value) return;
+    __touchModeOverride = value;
+    applyTouchModeClass(value);
+  };
+
+  const clearOverrideAndRecompute = () => {
+    if (typeof __touchModeOverride !== 'boolean') return;
+    __touchModeOverride = undefined;
+    __touchModeGuess = undefined;
+    applyTouchModeClass(isTouchDevice());
+  };
+
+  const markTouch = () => {
+    setOverride(true);
+  };
+
+  const markMouse = () => {
+    if (__touchModeOverride === true) {
+      clearOverrideAndRecompute();
+    }
+    if (typeof __touchModeOverride === 'boolean') {
+      setOverride(false);
+      return;
+    }
+    if (isTouchDevice()) {
+      setOverride(false);
+    } else {
+      applyTouchModeClass(false);
+    }
+  };
+
+  try {
+    window.addEventListener('touchstart', markTouch, { passive: true });
+    window.addEventListener('pointerdown', (ev) => {
+      if (!ev) return;
+      if (ev.pointerType === 'touch') {
+        markTouch();
+      } else if (ev.pointerType === 'mouse') {
+        markMouse();
+      }
+    }, { passive: true });
+  } catch {}
+
+  try {
+    if (window.matchMedia) {
+      const queries = [
+        '(hover: hover)', '(hover: none)', '(any-hover: hover)', '(any-hover: none)',
+        '(pointer: coarse)', '(pointer: fine)', '(any-pointer: coarse)', '(any-pointer: fine)'
+      ];
+      for (const q of queries) {
+        try {
+          const mql = window.matchMedia(q);
+          if (!mql) continue;
+          const handler = () => {
+            if (typeof __touchModeOverride === 'boolean') return;
+            __touchModeGuess = undefined;
+            applyTouchModeClass(isTouchDevice());
+          };
+          if (typeof mql.addEventListener === 'function') mql.addEventListener('change', handler);
+          else if (typeof mql.addListener === 'function') mql.addListener(handler);
+        } catch {}
+      }
+    }
+  } catch {}
 }
 
 // Modal helpers: animate open/close for <dialog>
@@ -2945,7 +3056,7 @@ function applyTheme(name) {
 
 function init() {
   load();
-  try { if (isTouchDevice()) document.documentElement.classList.add('no-hover'); } catch {}
+  try { setupTouchDeviceDetection(); } catch {}
   // 避免单点异常阻断后续初始化流程
   try { setupUI(); } catch {}
   // 预创建悬浮气泡容器，避免首次悬停/长按时的创建延迟
